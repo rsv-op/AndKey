@@ -3,6 +3,8 @@ package com.buildgenie.ingestion;
 import android.content.Context;
 import android.net.Uri;
 
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -45,7 +47,7 @@ public class TextExtractor {
         List<String> signals = new ArrayList<>();
 
         try {
-            preview = readPreview(file, 3000);
+            preview = readPreview(context, file, 3000);
             schema = detectSchema(name, ext, file, preview);
             signals = detectSignals(ext, schema, preview, file);
         } catch (Exception e) {
@@ -177,12 +179,15 @@ public class TextExtractor {
 
     // ---------- I/O Helpers ----------
 
-    private static String readPreview(File file, int maxChars) throws Exception {
+    private static String readPreview(Context context, File file, int maxChars) throws Exception {
         String ext = getExtension(file.getName());
         // For binary PDF/DOCX, try real extraction if libraries present; fallback to text scan
         if (ext.equals("pdf")) {
             try {
-                // Attempt PDFBox extraction if available at runtime
+                // CRITICAL: Init PDFBox resources before PDDocument.load() — prevents cmap crash on Android
+                if (context != null) {
+                    try { PDFBoxResourceLoader.init(context.getApplicationContext()); } catch (Throwable ignored) {}
+                }
                 return extractPdfText(file, maxChars);
             } catch (Throwable t) {
                 // Fallback: read as binary and extract printable strings
@@ -208,8 +213,6 @@ public class TextExtractor {
     }
 
     private static String extractPdfText(File file, int maxChars) throws Exception {
-        // Uses PDFBox-Android if present; reflection avoids hard compile dependency
-        // Simplified: try direct class load
         try (InputStream is = new FileInputStream(file)) {
             // If PDFBox is on classpath, this will work
             Class<?> loaderClass = Class.forName("com.tom_roush.pdfbox.pdmodel.PDDocument");

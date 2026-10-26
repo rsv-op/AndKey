@@ -19,11 +19,13 @@ android {
         }
     }
 
+    // Debug keystore signing ensures assembleRelease is installable on Android 16 (Vivo V50) without external secrets
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
         }
         debug {
             minifyEnabled false
@@ -36,7 +38,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    packagingOptions {
+    packaging {
         resources {
             excludes += [
                 'META-INF/DEPENDENCIES',
@@ -52,15 +54,18 @@ android {
                 'META-INF/LGPL-2.1.txt'
             ]
         }
-        // POI + PDFBox bring duplicate xmlbeans / commons
         jniLibs {
-            useLegacyPackaging true
+            useLegacyPackaging = true
         }
     }
 
-    // Ensure assets are merged correctly
-    aaptOptions {
-        noCompress 'tflite', 'onnx', 'gguf', 'traineddata'
+    // AGP 8.x: androidResources block must use correct Groovy syntax
+    // noCompress expects Set<String>; += with list works in Groovy DSL
+    androidResources {
+        noCompress += "tflite"
+        noCompress += "onnx"
+        noCompress += "gguf"
+        noCompress += "traineddata"
     }
 }
 
