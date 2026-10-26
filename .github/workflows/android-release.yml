@@ -7,6 +7,11 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write        # create GitHub Releases with the APK
+  pull-requests: write   # post build diagnostics as PR comments
+  actions: read
+
 jobs:
   build-offline-apk:
     runs-on: ubuntu-latest
@@ -93,6 +98,8 @@ jobs:
           echo "=== EXIT: $? ==="
 
       - name: Assemble Release APK
+        id: assemble_release
+        continue-on-error: true
         run: |
           set -o pipefail
           gradle :app:assembleRelease --stacktrace 2>&1 | tee /tmp/assembleRelease.log
@@ -136,6 +143,7 @@ jobs:
 
       - name: Verify APK is Real Compiled Archive (not dummy)
         id: verify_apk
+        if: always()
         continue-on-error: true
         run: |
           echo "=== APK Validation Gate (Vivo V50 Android 16 installable) ==="
@@ -182,6 +190,7 @@ jobs:
           echo "APK verification complete — proceeding to upload"
 
       - name: Prepare APKs for Upload (robust copy)
+        if: always()
         run: |
           mkdir -p /tmp/apk-upload
           echo "=== Searching for APKs ==="
@@ -202,6 +211,7 @@ jobs:
           cp app/src/main/AndroidManifest.xml /tmp/manifest-upload/source-AndroidManifest.xml 2>&1 || true
 
       - name: Upload Ready-to-Install Android APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: BuildGenie-Offline-APK
@@ -210,6 +220,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Merged Manifest for Audit
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: merged-manifest
@@ -217,7 +228,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Create GitHub Release with APK (main branch only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
