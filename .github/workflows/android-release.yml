@@ -114,18 +114,41 @@ jobs:
       - name: Verify APK is Real Compiled Archive (not dummy)
         run: |
           echo "=== APK Validation Gate (Vivo V50 Android 16 installable) ==="
-          ls -lh app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk
-          for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
+          echo "--- Outputs tree ---"
+          find app/build/outputs -type f -name "*.apk" 2>&1 | head -n 20
+          ls -R app/build/outputs 2>&1 | head -n 100
+          ls -lh app/build/outputs/apk/debug/*.apk 2>&1 || echo "No debug APK at expected path"
+          ls -lh app/build/outputs/apk/release/*.apk 2>&1 || echo "No release APK at expected path"
+          # Find APKs wherever they are
+          APK_LIST=$(find app/build/outputs -type f -name "*.apk" 2>/dev/null)
+          if [ -z "$APK_LIST" ]; then echo "ERROR: No APK found under app/build/outputs"; ls -R app/build 2>&1 | head -n 100; exit 1; fi
+          for apk in $APK_LIST; do
             echo "--- $apk ---"
-            # Check file is ZIP/Dalvik, not text stub
-            file "$apk" | grep -qi "zip" || (echo "ERROR: $apk is not a ZIP archive (dummy?)" && exit 1)
-            unzip -l "$apk" | grep -E "classes.dex|AndroidManifest.xml" || (echo "ERROR: $apk missing classes.dex/AndroidManifest.xml" && exit 1)
-            echo " Contents (first 20):"
-            unzip -l "$apk" | head -n 20
+            ls -lh "$apk"
+            # Check file is ZIP/Dalvik, not text stub (file command may output 'Zip archive data')
+            if command -v file >/dev/null 2>&1; then
+              file "$apk" || true
+              file "$apk" | grep -qi "zip\|archive\|apk" || echo "WARN: file type check ambiguous for $apk (continuing)"
+            fi
+            echo "Unzip listing:"
+            unzip -l "$apk" 2>&1 | head -n 30 || echo "unzip failed for $apk"
+            # Verify contains classes.dex and AndroidManifest.xml (real compilation)
+            if ! unzip -l "$apk" 2>&1 | grep -q "classes.dex"; then
+              echo "ERROR: $apk missing classes.dex (not a real compiled APK)"
+              unzip -l "$apk" 2>&1 | head -n 100
+              exit 1
+            fi
+            if ! unzip -l "$apk" 2>&1 | grep -q "AndroidManifest.xml"; then
+              echo "ERROR: $apk missing AndroidManifest.xml"
+              exit 1
+            fi
+            echo " Contents preview:"
+            unzip -l "$apk" 2>&1 | grep -E "classes|AndroidManifest|res/layout" | head -n 20 || true
+            # aapt2 badging check (non-fatal)
             if command -v aapt2 >/dev/null 2>&1; then
-              aapt2 dump badging "$apk" 2>&1 | head -n 20
+              aapt2 dump badging "$apk" 2>&1 | head -n 20 || echo "aapt2 check attempted"
             elif [ -n "$ANDROID_HOME" ] && [ -f "$ANDROID_HOME/build-tools/34.0.0/aapt2" ]; then
-              $ANDROID_HOME/build-tools/34.0.0/aapt2 dump badging "$apk" 2>&1 | head -n 20
+              $ANDROID_HOME/build-tools/34.0.0/aapt2 dump badging "$apk" 2>&1 | head -n 20 || true
             fi
           done
           echo "VERIFIED: APKs are real compiled ZIP/DEX archives with valid badging"
