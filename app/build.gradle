@@ -22,8 +22,10 @@ android {
     // Debug keystore signing ensures assembleRelease is installable on Android 16 (Vivo V50) without external secrets
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
+            // R8 + resource shrinking breaks Apache POI / PDFBox (heavy reflection & optional deps)
+            // in an offline sideload build, so keep it disabled: the APK is larger but reliably installable.
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
         }

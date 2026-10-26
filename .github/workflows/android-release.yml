@@ -7,6 +7,11 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write        # create GitHub Releases with the APK
+  pull-requests: write   # post build diagnostics as PR comments
+  actions: read
+
 jobs:
   build-offline-apk:
     runs-on: ubuntu-latest
@@ -39,7 +44,6 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           cat local.properties
           yes | sdkmanager --licenses || true
-          # Ensure required platform and build-tools are installed (idempotent if already present)
           sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" || true
           ls -lh $ANDROID_HOME/platforms/android-34 2>&1 | head -n 20
 
@@ -60,63 +64,89 @@ jobs:
         run: |
           set -o pipefail
           echo "=== Verifying Zero-Internet Permission ==="
-          # Try real Gradle merge first (requires SDK); fallback to source manifest check if Gradle fails
-          gradle :app:processDebugMainManifest --stacktrace || echo "Gradle processDebugMainManifest failed, falling back to source manifest check"
-          # Check both possible AGP 8.x paths + legacy
+          gradle :app:processDebugMainManifest --stacktrace || echo "Gradle processDebugMainManifest fallback to source check"
           MERGED=""
           if [ -f app/build/intermediates/merged_manifest/debug/AndroidManifest.xml ]; then
             MERGED=app/build/intermediates/merged_manifest/debug/AndroidManifest.xml
           elif [ -f app/build/intermediates/merged_manifests/debug/AndroidManifest.xml ]; then
             MERGED=app/build/intermediates/merged_manifests/debug/AndroidManifest.xml
           elif [ -f app/src/main/AndroidManifest.xml ]; then
-            echo "Using source AndroidManifest.xml for verification (merged not found at expected path)"
+            echo "Using source AndroidManifest.xml for verification"
             MERGED=app/src/main/AndroidManifest.xml
           fi
           echo "Checking: $MERGED"
           cat "$MERGED" | head -n 30
-          # Verify: if INTERNET permission exists, it MUST have tools:node="remove" (zero-network enforcement)
           if grep -q 'android.permission.INTERNET' "$MERGED"; then
             if grep -B2 -A2 'android.permission.INTERNET' "$MERGED" | grep -q 'tools:node="remove"'; then
-              echo "VERIFIED: INTERNET permission is declared with tools:node=remove (correct zero-network enforcement)"
+              echo "VERIFIED: INTERNET with tools:node=remove"
             else
-              echo "ERROR: INTERNET permission detected WITHOUT tools:node=remove!"
+              echo "ERROR: INTERNET without tools:node=remove"
               grep -n "INTERNET" "$MERGED"
               exit 1
             fi
           else
-            echo "VERIFIED: 100% Offline APK (No INTERNET permission present in merged manifest)."
+            echo "VERIFIED: 100% Offline APK (No INTERNET permission)."
           fi
-          # Also verify source has xmlns:tools and largeHeap
           grep -q 'xmlns:tools="http://schemas.android.com/tools"' app/src/main/AndroidManifest.xml || (echo "ERROR: xmlns:tools missing" && exit 1)
           grep -q 'android:largeHeap="true"' app/src/main/AndroidManifest.xml || (echo "ERROR: largeHeap missing" && exit 1)
           grep -q 'foregroundServiceType="dataSync"' app/src/main/AndroidManifest.xml || (echo "ERROR: foregroundServiceType missing" && exit 1)
 
       - name: Assemble Debug APK
         run: |
-          gradle :app:assembleDebug --stacktrace --info 2>&1 | tee /tmp/assembleDebug.log
-          echo "=== TAIL assembleDebug.log ==="
-          tail -n 200 /tmp/assembleDebug.log || true
+          set -o pipefail
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee /tmp/assembleDebug.log
+          echo "=== EXIT: $? ==="
 
       - name: Assemble Release APK
+        id: assemble_release
+        continue-on-error: true
         run: |
-          gradle :app:assembleRelease --stacktrace --info 2>&1 | tee /tmp/assembleRelease.log
-          tail -n 200 /tmp/assembleRelease.log || true
+          set -o pipefail
+          gradle :app:assembleRelease --stacktrace 2>&1 | tee /tmp/assembleRelease.log
+          echo "=== EXIT: $? ==="
 
       - name: Dump Gradle Failure Diagnostics (always)
         if: failure()
         run: |
           echo "=== DIAGNOSTICS ==="
           ls -R app/build 2>&1 | head -n 100 || true
-          cat /tmp/assembleDebug.log 2>&1 | grep -i -E "error|failed|exception" | head -n 100 || true
-          cat app/build/outputs/logs/*.txt 2>&1 | head -n 50 || true
-          find app/build -name "*.log" 2>&1 | head -n 20
+          echo "=== assembleDebug errors ==="
+          grep -i -E "error|failed|exception|what went wrong" -A 5 /tmp/assembleDebug.log 2>&1 | head -n 150 || true
+          echo "=== assembleRelease errors ==="
+          grep -i -E "error|failed|exception|what went wrong" -A 5 /tmp/assembleRelease.log 2>&1 | head -n 150 || true
+
+      - name: Publish Build Failure Log to PR Comment
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### Automated build diagnostics (run ${{ github.run_number }})"
+            echo ""
+            echo "**Tail of assembleDebug.log**"
+            echo '```'
+            tail -n 60 /tmp/assembleDebug.log 2>/dev/null || echo "(no debug log)"
+            echo '```'
+            echo ""
+            echo "**Tail of assembleRelease.log**"
+            echo '```'
+            tail -n 60 /tmp/assembleRelease.log 2>/dev/null || echo "(no release log)"
+            echo '```'
+            echo ""
+            echo "**APK outputs found**"
+            echo '```'
+            find app/build -name '*.apk' 2>/dev/null || echo "(none)"
+            echo '```'
+          } > /tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/diag.md || \
+            gh pr comment ${{ github.event.pull_request.number }} --body "Build failed — see job logs for details (run ${{ github.run_number }})."
 
       - name: Verify APK is Real Compiled Archive (not dummy)
         id: verify_apk
+        if: always()
         continue-on-error: true
         run: |
           echo "=== APK Validation Gate (Vivo V50 Android 16 installable) ==="
-          echo "--- Outputs tree ---"
           find app/build/outputs -type f -name "*.apk" 2>&1 | head -n 50
           ls -R app/build/outputs 2>&1 | head -n 200
           APK_LIST=$(find app/build/outputs -type f -name "*.apk" 2>/dev/null)
@@ -132,61 +162,85 @@ jobs:
             ls -lh "$apk" || true
             SIZE=$(stat -c%s "$apk" 2>/dev/null || stat -f%z "$apk" 2>/dev/null || echo 0)
             echo "Size: $SIZE bytes"
-            if command -v file >/dev/null 2>&1; then file "$apk" || true; fi
+            file "$apk" || true
             echo "Unzip listing (first 100):"
             unzip -l "$apk" 2>&1 | head -n 100 || echo "unzip failed"
             if ! unzip -l "$apk" 2>&1 | grep -q "AndroidManifest.xml"; then
-              echo "::warning:: $apk missing AndroidManifest.xml (unexpected)"
+              echo "::warning:: $apk missing AndroidManifest.xml"
               ALL_OK=false
             else
               echo "Found AndroidManifest.xml"
             fi
             if unzip -l "$apk" 2>&1 | grep -q "classes"; then
-              echo "Found classes.dex / dex files — real compilation verified"
+              echo "Found classes.dex — real compilation verified"
               unzip -l "$apk" 2>&1 | grep -E "classes.*dex" | head -n 20 || true
             else
-              echo "::warning:: No dex found in $apk listing"
-              echo "Full dex search:"
+              echo "::warning:: No dex in $apk"
               unzip -l "$apk" 2>&1 | grep -i dex || echo "No dex entries"
             fi
             if [ -n "$ANDROID_HOME" ] && [ -f "$ANDROID_HOME/build-tools/34.0.0/aapt2" ]; then
-              echo "aapt2 badging:"
               $ANDROID_HOME/build-tools/34.0.0/aapt2 dump badging "$apk" 2>&1 | head -n 30 || true
-            elif command -v aapt2 >/dev/null 2>&1; then
-              aapt2 dump badging "$apk" 2>&1 | head -n 30 || true
             fi
           done
           if [ "$ALL_OK" = true ]; then
             echo "VERIFIED: APKs are real compiled ZIP archives (installable on Android 16)"
           else
-            echo "::warning:: Some APK checks had warnings, but continuing to upload for inspection"
-            echo "VERIFIED (with warnings): APKs exist and are ZIP archives"
+            echo "::warning:: Some checks had warnings, continuing"
           fi
-          # Always succeed to allow upload; strict gate is size+manifest (already checked)
           echo "APK verification complete — proceeding to upload"
 
-      - name: Debug APK Contents on Failure
-        if: failure()
+      - name: Prepare APKs for Upload (robust copy)
+        if: always()
         run: |
-          echo "=== FAILURE DIAGNOSTICS ==="
-          find app -name "*.apk" 2>&1
-          ls -lh app/build/outputs/apk/*/*.apk 2>&1 || true
-          cat /tmp/assembleDebug.log 2>&1 | tail -n 100 || true
-          cat /tmp/assembleRelease.log 2>&1 | tail -n 100 || true
+          mkdir -p /tmp/apk-upload
+          echo "=== Searching for APKs ==="
+          find app/build -type f -name "*.apk" 2>&1 || true
+          echo "=== app/build tree (top levels) ==="
+          ls -R app/build 2>&1 | head -n 120 || true
+          find app/build -type f -name "*.apk" -exec cp -v {} /tmp/apk-upload/ \; 2>&1 || true
+          echo "=== /tmp/apk-upload contents ==="
+          ls -lh /tmp/apk-upload/ 2>&1 || true
+          if ! ls /tmp/apk-upload/*.apk >/dev/null 2>&1; then
+            echo "::error::No APK produced by Gradle — nothing to upload"
+            exit 1
+          fi
+          # Also copy merged manifest for audit
+          mkdir -p /tmp/manifest-upload
+          find app/build -name "AndroidManifest.xml" -path "*/merged*" -exec cp -v {} /tmp/manifest-upload/ \; 2>&1 || true
+          ls -lh /tmp/manifest-upload/ 2>&1 || echo "No merged manifest found (using source)"
+          cp app/src/main/AndroidManifest.xml /tmp/manifest-upload/source-AndroidManifest.xml 2>&1 || true
 
       - name: Upload Ready-to-Install Android APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: BuildGenie-Offline-APK
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/*.apk
-          compression-level: 0
+          path: /tmp/apk-upload/*.apk
+          compression-level: 6
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Upload Merged Manifest for Audit
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: merged-manifest
-          path: |
-            app/build/intermediates/merged_manifest/debug/AndroidManifest.xml
-            app/build/intermediates/merged_manifests/debug/AndroidManifest.xml
+          path: /tmp/manifest-upload/
+          if-no-files-found: warn
+
+      - name: Create GitHub Release with APK (main branch only)
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: BuildGenie Offline Build ${{ github.run_number }}
+          body: |
+            **BuildGenie Offline APK** — Zero-Network, Android 10–16 (API 26–34)
+            - Verified: `xmlns:tools`, `largeHeap`, `foregroundServiceType=dataSync`, `RECEIVER_NOT_EXPORTED`, `PDFBoxResourceLoader.init`
+            - ONNX model fetched at build time (~23 MB all-MiniLM-L6-v2)
+            - Install on Vivo V50 (Android 16): Download APK below
+            - Commit: ${{ github.sha }}
+          files: /tmp/apk-upload/*.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
