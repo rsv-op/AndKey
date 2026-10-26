@@ -1,0 +1,89 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.buildgenie'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.buildgenie"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+        multiDexEnabled true
+        // Enable vector drawables for Material Components
+        vectorDrawables {
+            useSupportLibrary true
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            applicationIdSuffix ".debug"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packagingOptions {
+        resources {
+            excludes += [
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+                'META-INF/ASL2.0',
+                'META-INF/LGPL2.1',
+                'META-INF/INDEX.LIST',
+                'META-INF/io.netty.versions.properties',
+                'META-INF/AL2.0',
+                'META-INF/LGPL-2.1.txt'
+            ]
+        }
+        // POI + PDFBox bring duplicate xmlbeans / commons
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    // Ensure assets are merged correctly
+    aaptOptions {
+        noCompress 'tflite', 'onnx', 'gguf', 'traineddata'
+    }
+}
+
+dependencies {
+    // AndroidX core
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.core:core:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.work:work-runtime:2.9.0'
+    implementation 'androidx.multidex:multidex:2.0.1'
+
+    // PDFBox-Android — zero-metadata PDF export (must call PDFBoxResourceLoader.init)
+    implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+
+    // Apache POI for .docx / .xlsx / .pptx ingestion (requires largeHeap)
+    implementation 'org.apache.poi:poi:5.2.3'
+    implementation 'org.apache.poi:poi-ooxml:5.2.3'
+    // POI transitive pin to avoid duplicate xmlbeans
+    implementation 'org.apache.xmlbeans:xmlbeans:5.1.1'
+
+    // On-device ML — ONNX Runtime (quantized MiniLM) + TFLite fallback
+    implementation 'com.microsoft.onnxruntime:onnxruntime:1.17.0'
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    // Optional: Vosk / Tesseract would be added here if needed
+}

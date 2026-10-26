@@ -1,0 +1,106 @@
+[
+  {
+    "buildId": "ml_text_classifier",
+    "name": "Offline Text Classifier",
+    "difficulty": "Beginner",
+    "templatePath": "templates/ml_text_classifier.md",
+    "description": "TF-IDF + Logistic Regression for text/category labeling. Runs 100% offline on CPU.",
+    "expectedExtensions": [
+      "csv",
+      "tsv"
+    ],
+    "requiredSignals": [
+      "text_column",
+      "label_column"
+    ],
+    "optionalSignals": [
+      "category_column",
+      "jsonl_prompts"
+    ],
+    "minConfidence": 60,
+    "scoring": {
+      "csv_with_text_label": 90,
+      "tsv_with_text_label": 85,
+      "jsonl_prompts": 40,
+      "yaml_config": 10
+    }
+  },
+  {
+    "buildId": "llm_doc_finetune",
+    "name": "LLM Document Fine-Tune",
+    "difficulty": "Intermediate",
+    "templatePath": "templates/llm_doc_finetune.md",
+    "description": "Fine-tune a local instruction model on private documents with QLoRA/CPU.",
+    "expectedExtensions": [
+      "jsonl",
+      "csv",
+      "pdf",
+      "docx",
+      "md"
+    ],
+    "requiredSignals": [
+      "prompt_completion_pairs"
+    ],
+    "optionalSignals": [
+      "yaml_config",
+      "csv_with_text"
+    ],
+    "minConfidence": 55,
+    "scoring": {
+      "jsonl_prompts": 95,
+      "csv_with_text": 70,
+      "pdf_doc": 60,
+      "yaml_config": 20
+    }
+  },
+  {
+    "buildId": "static_rag_pipeline",
+    "name": "Static RAG Pipeline",
+    "difficulty": "Intermediate",
+    "templatePath": "templates/static_rag_pipeline.md",
+    "description": "FAISS + ONNX embeddings for offline retrieval over PDFs/Markdown.",
+    "expectedExtensions": [
+      "pdf",
+      "docx",
+      "md",
+      "txt"
+    ],
+    "requiredSignals": [
+      "long_doc",
+      "pdf_doc"
+    ],
+    "optionalSignals": [
+      "csv_with_text",
+      "yaml_config"
+    ],
+    "minConfidence": 50,
+    "scoring": {
+      "pdf_doc": 90,
+      "docx_doc": 85,
+      "md_doc": 80,
+      "csv_with_text": 30
+    }
+  },
+  {
+    "buildId": "custom_pipeline",
+    "name": "Custom Offline Pipeline",
+    "difficulty": "Advanced",
+    "templatePath": "templates/static_rag_pipeline.md",
+    "description": "Generic offline script tailored to your exact filenames and schemas.",
+    "expectedExtensions": [
+      "csv",
+      "jsonl",
+      "yaml",
+      "pdf",
+      "txt"
+    ],
+    "requiredSignals": [],
+    "optionalSignals": [
+      "any_file"
+    ],
+    "minConfidence": 20,
+    "scoring": {
+      "any_file": 30
+    }
+  }
+]

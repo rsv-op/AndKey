@@ -1,0 +1,9 @@
+# Keep empty in Git (populated by GitHub Action or Git LFS)
+# Automated bundler downloads quantized models here at CI time:
+# - all-MiniLM-L6-v2-quant.onnx (~23 MB) from https://huggingface.co/Xenova/all-MiniLM-L6-v2
+# - vocab.txt
+#
+# For local development with large (>100 MB) GGUF LLM models, side-load via:
+#   adb push mymodel.gguf /sdcard/Download/BuildGenie/models/
+# or copy to getFilesDir()/models/ inside the app.
+# See GITHUB_AND_ANDROID_UPGRADES.md for all three handling options.

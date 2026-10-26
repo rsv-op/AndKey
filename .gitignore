@@ -1,0 +1,32 @@
+# Android / Gradle
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+*.apk
+*.aab
+*.keystore
+
+# Large ML models - handled via Action downloader or Git LFS
+app/src/main/assets/models/*.onnx
+app/src/main/assets/models/*.tflite
+app/src/main/assets/models/*.gguf
+app/src/main/assets/models/*.bin
+app/src/main/assets/models/*.traineddata
+# Keep placeholder so folder exists in git
+!app/src/main/assets/models/.gitkeep
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.log
+
+# Python venv if used for local script testing
+.venv/
+__pycache__/
+
+# Node not used, but keep for completeness
+node_modules/
