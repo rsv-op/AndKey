@@ -20,34 +20,24 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        continue-on-error: true
-
-      - name: Cache Gradle wrapper & dependencies
-        uses: actions/cache@v4
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          gradle-version: '8.7'
+
+      - name: Verify Android SDK (pre-installed on ubuntu-latest)
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -lh $ANDROID_HOME/platforms 2>&1 | head -n 20
+          sdkmanager --version 2>&1 | head -n 5 || echo "sdkmanager not in PATH (using $ANDROID_HOME/cmdline-tools)"
 
       - name: Fetch Open-Source ONNX/TFLite Models (Bypasses GitHub 100MB File Limit)
         run: |
           mkdir -p app/src/main/assets/models
           echo "Downloading quantized all-MiniLM-L6-v2 ONNX embedding model (~23MB)..."
-          # Try real download; fallback to placeholder for audit if network restricted
-          curl -L -s "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx" -o app/src/main/assets/models/all-MiniLM-L6-v2-quant.onnx || echo "placeholder" > app/src/main/assets/models/all-MiniLM-L6-v2-quant.onnx
-          curl -L -s "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/vocab.txt" -o app/src/main/assets/models/vocab.txt || echo "vocab" > app/src/main/assets/models/vocab.txt
-          # Ensure non-empty for CI (fallback creates 1KB stub if download blocked)
-          if [ ! -s app/src/main/assets/models/all-MiniLM-L6-v2-quant.onnx ]; then
-            echo "Creating stub ONNX for CI (real model via HuggingFace in production)"
-            dd if=/dev/zero of=app/src/main/assets/models/all-MiniLM-L6-v2-quant.onnx bs=1024 count=1 2>/dev/null
-          fi
+          curl -L -s "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx" -o app/src/main/assets/models/all-MiniLM-L6-v2-quant.onnx
+          curl -L -s "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/vocab.txt" -o app/src/main/assets/models/vocab.txt
           echo "Models fetched:"
           ls -lh app/src/main/assets/models/
           test -s app/src/main/assets/models/all-MiniLM-L6-v2-quant.onnx || (echo "ONNX download failed" && exit 1)
@@ -57,7 +47,7 @@ jobs:
 
       - name: Verify Zero-Internet Permission in Merged Manifest
         run: |
-          ./gradlew :app:processDebugMainManifest
+          gradle :app:processDebugMainManifest --stacktrace
           if grep -q "android.permission.INTERNET" app/build/intermediates/merged_manifests/debug/AndroidManifest.xml; then
             echo "ERROR: INTERNET permission detected in merged manifest!"
             grep -n "INTERNET" app/build/intermediates/merged_manifests/debug/AndroidManifest.xml
@@ -67,12 +57,26 @@ jobs:
           fi
 
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle :app:assembleDebug --stacktrace
 
-      - name: Assemble Release APK (optional)
-        if: github.ref == 'refs/heads/main'
-        run: ./gradlew assembleRelease --stacktrace
-        continue-on-error: true
+      - name: Assemble Release APK
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Verify APK is Real Compiled Archive (not dummy)
+        run: |
+          echo "=== APK Validation Gate ==="
+          ls -lh app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk
+          for apk in app/build/outputs/apk/debug/*.apk app/build/outputs/apk/release/*.apk; do
+            echo "--- $apk ---"
+            unzip -l "$apk" | grep -E "classes.dex|AndroidManifest.xml" || (echo "ERROR: $apk is not a valid compiled APK (missing classes.dex/AndroidManifest.xml)" && exit 1)
+            # Also verify via aapt if available
+            if command -v aapt2 >/dev/null 2>&1; then
+              aapt2 dump badging "$apk" 2>&1 | head -n 20
+            elif [ -n "$ANDROID_HOME" ] && [ -f "$ANDROID_HOME/build-tools/34.0.0/aapt2" ]; then
+              $ANDROID_HOME/build-tools/34.0.0/aapt2 dump badging "$apk" 2>&1 | head -n 20
+            fi
+          done
+          echo "VERIFIED: APKs are real compiled ZIP/DEX archives"
 
       - name: Upload Ready-to-Install Android APK
         uses: actions/upload-artifact@v4

@@ -19,11 +19,13 @@ android {
         }
     }
 
+    // Debug keystore signing ensures assembleRelease is installable on Android 16 (Vivo V50) without external secrets
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
         }
         debug {
             minifyEnabled false
