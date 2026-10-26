@@ -92,10 +92,24 @@ jobs:
           grep -q 'foregroundServiceType="dataSync"' app/src/main/AndroidManifest.xml || (echo "ERROR: foregroundServiceType missing" && exit 1)
 
       - name: Assemble Debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          gradle :app:assembleDebug --stacktrace --info 2>&1 | tee /tmp/assembleDebug.log
+          echo "=== TAIL assembleDebug.log ==="
+          tail -n 200 /tmp/assembleDebug.log || true
 
       - name: Assemble Release APK
-        run: gradle :app:assembleRelease --stacktrace
+        run: |
+          gradle :app:assembleRelease --stacktrace --info 2>&1 | tee /tmp/assembleRelease.log
+          tail -n 200 /tmp/assembleRelease.log || true
+
+      - name: Dump Gradle Failure Diagnostics (always)
+        if: failure()
+        run: |
+          echo "=== DIAGNOSTICS ==="
+          ls -R app/build 2>&1 | head -n 100 || true
+          cat /tmp/assembleDebug.log 2>&1 | grep -i -E "error|failed|exception" | head -n 100 || true
+          cat app/build/outputs/logs/*.txt 2>&1 | head -n 50 || true
+          find app/build -name "*.log" 2>&1 | head -n 20
 
       - name: Verify APK is Real Compiled Archive (not dummy)
         run: |

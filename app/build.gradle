@@ -59,8 +59,13 @@ android {
         }
     }
 
+    // AGP 8.x: androidResources block must use correct Groovy syntax
+    // noCompress expects Set<String>; += with list works in Groovy DSL
     androidResources {
-        noCompress += ['tflite', 'onnx', 'gguf', 'traineddata']
+        noCompress += "tflite"
+        noCompress += "onnx"
+        noCompress += "gguf"
+        noCompress += "traineddata"
     }
 }
 
