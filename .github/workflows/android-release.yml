@@ -216,8 +216,9 @@ jobs:
         with:
           name: BuildGenie-Offline-APK
           path: /tmp/apk-upload/*.apk
-          compression-level: 0
+          compression-level: 6
           if-no-files-found: error
+          retention-days: 90
 
       - name: Upload Merged Manifest for Audit
         if: always()
