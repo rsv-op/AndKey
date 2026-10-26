@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- AGP 8.x: namespace is declared in app/build.gradle — the legacy package attribute must NOT be present -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.buildgenie">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- STRICT PRIVACY: Explicitly ensure no INTERNET permission is ever merged by dependencies -->
     <uses-permission

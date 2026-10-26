@@ -88,20 +88,51 @@ jobs:
 
       - name: Assemble Debug APK
         run: |
-          gradle :app:assembleDebug --stacktrace --info 2>&1 | tee /tmp/assembleDebug.log
-          tail -n 200 /tmp/assembleDebug.log || true
+          set -o pipefail
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee /tmp/assembleDebug.log
+          echo "=== EXIT: $? ==="
 
       - name: Assemble Release APK
         run: |
-          gradle :app:assembleRelease --stacktrace --info 2>&1 | tee /tmp/assembleRelease.log
-          tail -n 200 /tmp/assembleRelease.log || true
+          set -o pipefail
+          gradle :app:assembleRelease --stacktrace 2>&1 | tee /tmp/assembleRelease.log
+          echo "=== EXIT: $? ==="
 
       - name: Dump Gradle Failure Diagnostics (always)
         if: failure()
         run: |
           echo "=== DIAGNOSTICS ==="
           ls -R app/build 2>&1 | head -n 100 || true
-          cat /tmp/assembleDebug.log 2>&1 | grep -i -E "error|failed|exception" | head -n 100 || true
+          echo "=== assembleDebug errors ==="
+          grep -i -E "error|failed|exception|what went wrong" -A 5 /tmp/assembleDebug.log 2>&1 | head -n 150 || true
+          echo "=== assembleRelease errors ==="
+          grep -i -E "error|failed|exception|what went wrong" -A 5 /tmp/assembleRelease.log 2>&1 | head -n 150 || true
+
+      - name: Publish Build Failure Log to PR Comment
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "### Automated build diagnostics (run ${{ github.run_number }})"
+            echo ""
+            echo "**Tail of assembleDebug.log**"
+            echo '```'
+            tail -n 60 /tmp/assembleDebug.log 2>/dev/null || echo "(no debug log)"
+            echo '```'
+            echo ""
+            echo "**Tail of assembleRelease.log**"
+            echo '```'
+            tail -n 60 /tmp/assembleRelease.log 2>/dev/null || echo "(no release log)"
+            echo '```'
+            echo ""
+            echo "**APK outputs found**"
+            echo '```'
+            find app/build -name '*.apk' 2>/dev/null || echo "(none)"
+            echo '```'
+          } > /tmp/diag.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/diag.md || \
+            gh pr comment ${{ github.event.pull_request.number }} --body "Build failed — see job logs for details (run ${{ github.run_number }})."
 
       - name: Verify APK is Real Compiled Archive (not dummy)
         id: verify_apk
@@ -153,11 +184,17 @@ jobs:
       - name: Prepare APKs for Upload (robust copy)
         run: |
           mkdir -p /tmp/apk-upload
-          find app/build/outputs -type f -name "*.apk" -exec cp -v {} /tmp/apk-upload/ \; 2>&1
+          echo "=== Searching for APKs ==="
+          find app/build -type f -name "*.apk" 2>&1 || true
+          echo "=== app/build tree (top levels) ==="
+          ls -R app/build 2>&1 | head -n 120 || true
+          find app/build -type f -name "*.apk" -exec cp -v {} /tmp/apk-upload/ \; 2>&1 || true
           echo "=== /tmp/apk-upload contents ==="
-          ls -lh /tmp/apk-upload/ 2>&1
-          # Ensure at least one APK exists for upload action
-          ls -lh /tmp/apk-upload/*.apk 2>&1
+          ls -lh /tmp/apk-upload/ 2>&1 || true
+          if ! ls /tmp/apk-upload/*.apk >/dev/null 2>&1; then
+            echo "::error::No APK produced by Gradle — nothing to upload"
+            exit 1
+          fi
           # Also copy merged manifest for audit
           mkdir -p /tmp/manifest-upload
           find app/build -name "AndroidManifest.xml" -path "*/merged*" -exec cp -v {} /tmp/manifest-upload/ \; 2>&1 || true
