@@ -301,10 +301,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         IntentFilter filter = new IntentFilter("com.buildgenie.ACTION_FILE_INGESTED");
+        // API 33+ requires RECEIVER_NOT_EXPORTED; use ContextCompat for full API 26–34 compatibility
+        // Guard prevents NoSuchMethodError on API 26–32 where 3-arg overload doesn't exist.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(ingestionReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            ContextCompat.registerReceiver(this, ingestionReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
         } else {
-            registerReceiver(ingestionReceiver, filter);
+            ContextCompat.registerReceiver(this, ingestionReceiver, filter, null, null, 0);
         }
     }
 
