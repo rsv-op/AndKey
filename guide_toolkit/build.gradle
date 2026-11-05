@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ---------------------------------------------------------------------------
+// Single source of truth for the two bundled documents.
+// The APK ships TERMUX_PYTHON_WINDOWS_GUIDE.md and tools/model_toolkit.py as
+// assets, generated straight from the repository files so they can never drift.
+// ---------------------------------------------------------------------------
+def docAssetsDir = layout.buildDirectory.dir('generated/docAssets')
+
+def copyDocs = tasks.register('copyDocs', Copy) {
+    from(rootProject.file('TERMUX_PYTHON_WINDOWS_GUIDE.md')) {
+        rename { 'TERMUX_PYTHON_WINDOWS_GUIDE.md' }
+    }
+    from(rootProject.file('tools/model_toolkit.py'))
+    into(docAssetsDir)
+}
+
+android {
+    namespace 'com.buildgenie.toolkit'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.buildgenie.toolkit"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    // No dependencies at all: this module deliberately uses only the Android
+    // framework (no AndroidX, no Material, no network libraries) so the APK is
+    // tiny, builds in seconds and physically cannot phone home.
+    sourceSets {
+        main {
+            assets.srcDirs += [docAssetsDir]
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            // Debug keystore keeps the release APK sideload-installable without secrets
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.matching { it.name == 'preBuild' }.configureEach {
+    dependsOn copyDocs
+}
