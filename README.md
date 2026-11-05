@@ -28,6 +28,8 @@ adb shell dumpsys package com.buildgenie | grep INTERNET # should be empty — z
 
 See [**GITHUB_AND_ANDROID_UPGRADES.md**](GITHUB_AND_ANDROID_UPGRADES.md) for full file tree, large-model handling (Git LFS / Action fetcher / side-load), and the 5 critical Android upgrades.
 
+See [**TERMUX_PYTHON_WINDOWS_GUIDE.md**](TERMUX_PYTHON_WINDOWS_GUIDE.md) for exact Termux / Python / Windows Shell steps to run the 4 core file functions (Load · Inspect `.gguf`/`.litert`/`.ablitert` · Generate · Replace) using [`tools/model_toolkit.py`](tools/model_toolkit.py).
+
 ## Build Locally
 
 ```bash
