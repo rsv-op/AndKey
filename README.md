@@ -19,6 +19,42 @@ adb install app-debug.apk
 adb shell dumpsys package com.buildgenie | grep INTERNET # should be empty — zero-network verified
 ```
 
+## 🧰 Toolkit APK (guide + `tools/model_toolkit.py`, on-device)
+
+`guide_toolkit/` builds a second, tiny APK (`com.buildgenie.toolkit`, no third-party
+dependencies, no network permission) that packages this documentation set and the Python
+toolkit into one installable app:
+
+- **Guide** — `TERMUX_PYTHON_WINDOWS_GUIDE.md` copied into the APK at build time and rendered in-app
+- **Python tool** — `tools/model_toolkit.py` bundled verbatim (copy it out to Termux, or just read it)
+- **Native port of the four functions**, so they work with neither Termux nor a PC:
+  ① Load (size / SHA-256 / format) · ② Inspect `.gguf` / `.litert` / `.ablitert` / `.tflite`
+  · ③ Generate (`report.json`, `manifest.json`, self-verified `stub.gguf`) · ④ Replace
+  (atomic swap, `.bak-<timestamp>` backup, hash verification, restore)
+
+Build it:
+
+```bash
+echo "sdk.dir=$ANDROID_HOME" > local.properties
+gradle :guide_toolkit:assembleDebug      # → guide_toolkit/build/outputs/apk/debug/guide_toolkit-debug.apk
+gradle :guide_toolkit:assembleRelease    # → installable release APK (debug keystore)
+```
+
+**Download without building:**
+
+- [**Release → BuildGenie Toolkit 1.0.0**](https://github.com/rsv-op/AndKey/releases/tag/toolkit-v1.0.0)
+- or straight from the always-current tag (works even where Actions artifacts are blocked):
+
+```bash
+curl -L -o BuildGenie-Toolkit.apk \
+  https://github.com/rsv-op/AndKey/raw/apk-latest/ci-artifacts/BuildGenie-Toolkit-release.apk
+adb install -r BuildGenie-Toolkit.apk
+```
+
+The CI job ([**Build BuildGenie Toolkit APK (guide + tools)**](.github/workflows/build-guide-toolkit-apk.yml))
+additionally asserts that both assets and `classes.dex` are really inside the built zip and that no
+`INTERNET` permission survived.
+
 ## Architecture
 
 - **SAF Inbox** (`MainActivity` + `FileWatchService` with `RECEIVER_NOT_EXPORTED` + `foregroundServiceType=dataSync`)
