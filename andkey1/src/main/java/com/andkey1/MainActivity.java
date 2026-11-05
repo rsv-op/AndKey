@@ -1,4 +1,4 @@
-package com.buildgenie.toolkit;
+package com.andkey1;
 
 import android.app.Activity;
 import android.content.ClipData;
@@ -42,7 +42,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * BuildGenie Toolkit — the offline, on-device companion to
+ * AndKey1 — the offline, on-device companion to
  * {@code TERMUX_PYTHON_WINDOWS_GUIDE.md} and {@code tools/model_toolkit.py}.
  *
  * <p>The guide and the Python tool are compiled into the APK as assets, and the
@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
         header.setBackgroundColor(0xFF101820);
 
         TextView title = new TextView(this);
-        title.setText("BuildGenie Toolkit");
+        title.setText("AndKey1");
         title.setTextColor(Color.WHITE);
         title.setTextSize(19f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
@@ -300,7 +300,7 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         final String md = readAsset(GUIDE_ASSET);
-        row.addView(action("Copy Markdown", v -> copyToClipboard("BuildGenie guide", md)),
+        row.addView(action("Copy Markdown", v -> copyToClipboard("AndKey1 guide", md)),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         row.addView(action("Save to workspace", v -> saveToWorkspace(GUIDE_ASSET, md)),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -468,19 +468,19 @@ public class MainActivity extends Activity {
 
     private View buildAboutPage() {
         LinearLayout col = column();
-        col.addView(heading("About this APK"));
+        col.addView(heading("About AndKey1"));
         col.addView(body(
-                "BuildGenie Toolkit " + ModelToolkit.TOOL_VERSION + " packages:\n"
+                "AndKey1 " + ModelToolkit.TOOL_VERSION + " packages:\n"
                         + "• TERMUX_PYTHON_WINDOWS_GUIDE.md — the operating guide, rendered in-app\n"
-                        + "• tools/model_toolkit.py — bundled verbatim, copyable to Termux\n"
+                        + "• model_toolkit.py — the Python toolkit, verbatim (copy it out to Termux)\n"
                         + "• A native port of the four functions: Load · Inspect · Generate · Replace\n\n"
-                        + "Both files are compiled into the APK at build time from the repository "
-                        + "sources, so the app can never drift from the docs.\n\n"
+                        + "Both files live inside this app's own assets (andkey1/src/main/assets/), so "
+                        + "the app can never drift from its documentation — nothing else is in this project.\n\n"
                         + "Zero network: the INTERNET and ACCESS_NETWORK_STATE permissions are "
                         + "removed with tools:node=\"remove\", no third-party libraries are linked, "
                         + "and every operation is local file I/O.\n\n"
                         + "Workspace (visible over adb/Termux as "
-                        + "/sdcard/Android/data/com.buildgenie.toolkit/files/workspace):\n"
+                        + "/sdcard/Android/data/com.andkey1/files/workspace):\n"
                         + workspace.getAbsolutePath() + "\n\n"
                         + "Exit-code contract (same as the Python tool): 0 = success, 1 = file or "
                         + "directory not found, 2 = parse or validation failure, 3 = wrong usage."));

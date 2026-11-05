@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-model_toolkit.py — BuildGenie file operations toolkit
+model_toolkit.py — AndKey1 file operations toolkit
 =====================================================
 
 Implements the four required APK-support functions, identically on
@@ -22,7 +22,7 @@ Formats are detected by CONTENT (magic bytes), not by file extension:
   * anything else     header + hash report only
 
 Standard library only — no pip installs. Python 3.8+.
-Works offline; zero network calls (matches BuildGenie's zero-network policy).
+Works offline; zero network calls (matches AndKey1's zero-network policy).
 
 Exit codes: 0 = OK, 1 = file not found, 2 = parse/validation error,
             3 = usage error.
@@ -676,7 +676,7 @@ def _cmd_restore(args):
 def build_parser():
     p = argparse.ArgumentParser(
         prog="model_toolkit",
-        description="BuildGenie file toolkit: load / inspect / generate / replace "
+        description="AndKey1 file toolkit: load / inspect / generate / replace "
                     "for .gguf, .litert, .ablitert model files. Stdlib only, offline.")
     p.add_argument("--version", action="version", version="model_toolkit " + TOOL_VERSION)
     sub = p.add_subparsers(dest="cmd", required=True)

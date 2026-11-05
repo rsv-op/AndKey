@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+// AndKey1 — one standalone app.
+// The guide (assets/TERMUX_PYTHON_WINDOWS_GUIDE.md) and the Python toolkit
+// (assets/model_toolkit.py) live inside this module and are compiled into the
+// APK as-is, so the app can never drift from its own documentation.
+android {
+    namespace 'com.andkey1'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.andkey1"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    // No dependencies at all: framework-only (no AndroidX, no Material, no
+    // networking) so the APK stays tiny and physically cannot phone home.
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            // Debug keystore keeps the release APK sideload-installable without secrets
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

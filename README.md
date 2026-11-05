@@ -1,86 +1,57 @@
-# BuildGenie — Offline Builder & AI Dev Chat
+# AndKey1
 
-[![BuildGenie Offline APK & Model Bundler](https://github.com/rsv-op/AndKey/actions/workflows/android-release.yml/badge.svg)](https://github.com/rsv-op/AndKey/actions/workflows/android-release.yml)
+**One standalone offline Android app** — no dependencies, no permissions, no network.
 
-**100% On-Device • Zero Telemetry • Zero Network Permission** — Android 10–16 (API 26–34)
+`andkey1/` contains the entire project: the Java source, `TERMUX_PYTHON_WINDOWS_GUIDE.md` and
+`model_toolkit.py`. Those two files are compiled into the APK as assets and rendered/offered
+in-app, so the app can never drift from its own documentation.
 
-## 📥 Download APK (Install on Vivo V50 Android 16)
+## Download
 
-> **Latest Release:** Go to [**Releases → Latest**](https://github.com/rsv-op/AndKey/releases) and download `app-debug.apk` or `app-release.apk`
-
-Alternatively, get the artifact from any successful workflow run:
-1. Open [**Actions → BuildGenie Offline APK & Model Bundler**](https://github.com/rsv-op/AndKey/actions/workflows/android-release.yml)
-2. Click the latest **green** run (check-mark)
-3. Scroll to **Artifacts** → download **BuildGenie-Offline-APK** (contains `app-debug.apk` + `app-release.apk`)
-
-**Verify install (Vivo V50):**
-```bash
-adb install app-debug.apk
-adb shell dumpsys package com.buildgenie | grep INTERNET # should be empty — zero-network verified
-```
-
-## 🧰 Toolkit APK (guide + `tools/model_toolkit.py`, on-device)
-
-`guide_toolkit/` builds a second, tiny APK (`com.buildgenie.toolkit`, no third-party
-dependencies, no network permission) that packages this documentation set and the Python
-toolkit into one installable app:
-
-- **Guide** — `TERMUX_PYTHON_WINDOWS_GUIDE.md` copied into the APK at build time and rendered in-app
-- **Python tool** — `tools/model_toolkit.py` bundled verbatim (copy it out to Termux, or just read it)
-- **Native port of the four functions**, so they work with neither Termux nor a PC:
-  ① Load (size / SHA-256 / format) · ② Inspect `.gguf` / `.litert` / `.ablitert` / `.tflite`
-  · ③ Generate (`report.json`, `manifest.json`, self-verified `stub.gguf`) · ④ Replace
-  (atomic swap, `.bak-<timestamp>` backup, hash verification, restore)
-
-Build it:
+- **Release APK** (`com.andkey1`, sideload-ready, ~50 KB):
+  [Releases → AndKey1](https://github.com/rsv-op/AndKey/releases) ·
+  direct: `https://github.com/rsv-op/AndKey/releases/latest/download/AndKey1-release.apk`
+- Always-current mirror (works where Actions artifacts are blocked):
 
 ```bash
-echo "sdk.dir=$ANDROID_HOME" > local.properties
-gradle :guide_toolkit:assembleDebug      # → guide_toolkit/build/outputs/apk/debug/guide_toolkit-debug.apk
-gradle :guide_toolkit:assembleRelease    # → installable release APK (debug keystore)
+curl -L -o AndKey1.apk \
+  https://github.com/rsv-op/AndKey/raw/apk-latest/ci-artifacts/AndKey1-release.apk
+adb install -r AndKey1.apk
 ```
 
-**Download without building:**
+## What it does
 
-- [**Release → BuildGenie Toolkit 1.0.0**](https://github.com/rsv-op/AndKey/releases/tag/toolkit-v1.0.0)
-- or straight from the always-current tag (works even where Actions artifacts are blocked):
+| Tab | Function |
+|-----|----------|
+| **Guide** | `TERMUX_PYTHON_WINDOWS_GUIDE.md`, rendered in-app (copy / save to workspace) |
+| **① Load** | size, SHA-256 and format from magic bytes (`gguf` / `litert` / `zip` / `unknown`) |
+| **② Inspect** | `.gguf` header (version, tensors, metadata KVs) and `.litert`/`.ablitert`/`.tflite` FlatBuffers (root offset, `TFL3`, model version, subgraph/op/buffer counts) |
+| **③ Generate** | `<model>.report.json`, `manifest.json`, self-verified `stub.gguf`; export to Downloads |
+| **④ Replace** | atomic temp→fsync→rename swap, `.bak-<timestamp>` backup, hash verification, restore |
+| **Python tool** | `model_toolkit.py` verbatim — copy it out to Termux for the CLI |
 
-```bash
-curl -L -o BuildGenie-Toolkit.apk \
-  https://github.com/rsv-op/AndKey/raw/apk-latest/ci-artifacts/BuildGenie-Toolkit-release.apk
-adb install -r BuildGenie-Toolkit.apk
-```
+`minSdk 26` (Android 8+) · `targetSdk 34` · framework-only Java 17 · ~50 KB.
 
-The CI job ([**Build BuildGenie Toolkit APK (guide + tools)**](.github/workflows/build-guide-toolkit-apk.yml))
-additionally asserts that both assets and `classes.dex` are really inside the built zip and that no
-`INTERNET` permission survived.
-
-## Architecture
-
-- **SAF Inbox** (`MainActivity` + `FileWatchService` with `RECEIVER_NOT_EXPORTED` + `foregroundServiceType=dataSync`)
-- **Ingestion** (`TextExtractor` + `PDFBoxResourceLoader.init` before `PDDocument.load`)
-- **Build Matching** (`BuildMatcher` + `builds.json` ontology, 3 templates)
-- **Zero-Metadata PDF** (`PdfExporter` + `MediaStore` on Android 10+ + `PrivacyFilter`)
-
-See [**GITHUB_AND_ANDROID_UPGRADES.md**](GITHUB_AND_ANDROID_UPGRADES.md) for full file tree, large-model handling (Git LFS / Action fetcher / side-load), and the 5 critical Android upgrades.
-
-See [**TERMUX_PYTHON_WINDOWS_GUIDE.md**](TERMUX_PYTHON_WINDOWS_GUIDE.md) for exact Termux / Python / Windows Shell steps to run the 4 core file functions (Load · Inspect `.gguf`/`.litert`/`.ablitert` · Generate · Replace) using [`tools/model_toolkit.py`](tools/model_toolkit.py).
-
-## Build Locally
+## Build
 
 ```bash
 echo "sdk.dir=$ANDROID_HOME" > local.properties
-gradle :app:assembleDebug   # Debug APK
-gradle :app:assembleRelease # Release APK (signed with debug keystore, ready for sideload)
-# Outputs: app/build/outputs/apk/debug/app-debug.apk
+gradle :andkey1:assembleDebug      # andkey1/build/outputs/apk/debug/andkey1-debug.apk
+gradle :andkey1:assembleRelease    # andkey1/build/outputs/apk/release/andkey1-release.apk
 ```
 
-## GitHub Actions
+CI: [`.github/workflows/build-andkey1-apk.yml`](.github/workflows/build-andkey1-apk.yml) builds both
+variants, asserts the two assets and `classes.dex` are inside the zip, and fails if any permission
+reappears.
 
-Every push to `main` builds a real APK (not dummy):
-- Fetches `all-MiniLM-L6-v2-quant.onnx` (~23 MB) from Hugging Face (bypasses 100 MB Git limit)
-- Verifies `android.permission.INTERNET` is removed via `tools:node="remove"` + `xmlns:tools`
-- Validates APK via `unzip -l` + `aapt2 dump badging` + `file` (ZIP/DEX)
-- Uploads to **Artifacts** and auto-creates **Release** `build-<run_number>` on `main`
+## Zero network
 
-ForFun — see `GITHUB_AND_ANDROID_UPGRADES.md`
+`INTERNET` and `ACCESS_NETWORK_STATE` are removed with `tools:node="remove"`; there are no
+third-party libraries; every operation is local file I/O. Verify:
+
+```bash
+adb shell dumpsys package com.andkey1 | grep INTERNET   # expect: nothing
+```
+
+The full operating guide (in-app, Termux, Python CLI and Windows/adb recipes) is
+`andkey1/src/main/assets/TERMUX_PYTHON_WINDOWS_GUIDE.md`.

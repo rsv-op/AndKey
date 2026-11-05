@@ -12,8 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "BuildGenie"
-include ':app'
-// Offline docs+toolkit companion: bundles TERMUX_PYTHON_WINDOWS_GUIDE.md and
-// tools/model_toolkit.py with native Load/Inspect/Generate/Replace implementations.
-include ':guide_toolkit'
+rootProject.name = "AndKey1"
+include ':andkey1'

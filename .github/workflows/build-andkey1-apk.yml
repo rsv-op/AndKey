@@ -1,0 +1,174 @@
+name: AndKey1 APK (guide + tools)
+
+# Builds AndKey1 — the single standalone app that ships
+# andkey1/src/main/assets/TERMUX_PYTHON_WINDOWS_GUIDE.md and model_toolkit.py,
+# plus native Load/Inspect/Generate/Replace. No third-party dependencies, so
+# this finishes in well under a minute.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "andkey1/**"
+      - ".github/workflows/build-andkey1-apk.yml"
+  pull_request:
+    paths:
+      - "andkey1/**"
+      - ".github/workflows/build-andkey1-apk.yml"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-andkey1-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Configure Android SDK
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          ls -lh "$ANDROID_HOME/platforms" | head -n 10
+          ls -lh "$ANDROID_HOME/build-tools" | head -n 10
+
+      - name: Verify the app's own assets exist
+        run: |
+          test -s andkey1/src/main/assets/TERMUX_PYTHON_WINDOWS_GUIDE.md || (echo "guide asset missing" && exit 1)
+          test -s andkey1/src/main/assets/model_toolkit.py || (echo "toolkit asset missing" && exit 1)
+          echo "guide:  $(wc -c < andkey1/src/main/assets/TERMUX_PYTHON_WINDOWS_GUIDE.md) bytes"
+          echo "python: $(wc -c < andkey1/src/main/assets/model_toolkit.py) bytes"
+          echo "modules in settings.gradle:"; grep include settings.gradle
+
+      - name: Assemble Debug + Release APK
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          gradle :andkey1:assembleDebug :andkey1:assembleRelease --stacktrace 2>&1 | tee /tmp/build.log
+
+      - name: Verify APK content (guide + toolkit really inside)
+        run: |
+          set -e
+          mkdir -p /tmp/apk
+          find andkey1/build/outputs -name '*.apk' -exec cp -v {} /tmp/apk/ \;
+          ls -lh /tmp/apk
+          for apk in /tmp/apk/*.apk; do
+            echo "=== $apk ==="
+            unzip -l "$apk" | head -n 20
+            unzip -l "$apk" | grep -q 'assets/TERMUX_PYTHON_WINDOWS_GUIDE.md' \
+              || (echo "ERROR: guide asset missing from $apk" && exit 1)
+            unzip -l "$apk" | grep -q 'assets/model_toolkit.py' \
+              || (echo "ERROR: python toolkit asset missing from $apk" && exit 1)
+            unzip -l "$apk" | grep -q 'classes.dex' \
+              || (echo "ERROR: no classes.dex (not a compiled APK)" && exit 1)
+            echo "OK: guide + toolkit + dex present"
+            if [ -x "$ANDROID_HOME/build-tools/34.0.0/aapt2" ]; then
+              "$ANDROID_HOME/build-tools/34.0.0/aapt2" dump badging "$apk" | head -n 6
+            fi
+          done
+          # Stable, human names for the two APKs
+          for variant in debug release; do
+            src=""
+            for candidate in /tmp/apk/andkey1-$variant.apk /tmp/apk/andkey1-$variant-unsigned.apk; do
+              [ -f "$candidate" ] && src="$candidate"
+            done
+            [ -n "$src" ] && cp "$src" "/tmp/apk/AndKey1-$variant.apk"
+          done
+          ls -lh /tmp/apk
+
+      - name: Zero-network + single-app audit
+        run: |
+          APK=/tmp/apk/AndKey1-release.apk
+          AAPT2="$ANDROID_HOME/build-tools/34.0.0/aapt2"
+          "$AAPT2" dump permissions "$APK" | tee /tmp/perms.txt
+          if grep -qi 'android.permission' /tmp/perms.txt; then
+            echo "::error::permissions found — AndKey1 must run with none"
+            exit 1
+          fi
+          echo "VERIFIED: zero permissions"
+          BADGING=$("$AAPT2" dump badging "$APK")
+          echo "$BADGING" | head -n 6
+          echo "$BADGING" | grep -q "package: name='com.andkey1'" || (echo "ERROR: wrong package" && exit 1)
+          echo "$BADGING" | grep -q "application-label:'AndKey1'" || (echo "ERROR: wrong app label" && exit 1)
+          echo "VERIFIED: package com.andkey1, label AndKey1"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AndKey1-APK
+          path: /tmp/apk/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      # Actions artifact downloads come from a blob host that some networks
+      # block. Mirroring the APKs into one force-updated tag makes the download
+      # work anywhere git works:
+      #   git fetch origin tag apk-latest
+      #   git show apk-latest:ci-artifacts/AndKey1-release.apk > AndKey1.apk
+      - name: Mirror APKs into the apk-latest tag
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -e
+          git config user.name "AndKey1 CI"
+          git config user.email "ci@users.noreply.github.com"
+          mkdir -p ci-artifacts
+          cp /tmp/apk/AndKey1-release.apk /tmp/apk/AndKey1-debug.apk ci-artifacts/
+          cat > ci-artifacts/README.txt <<'EOF'
+          AndKey1 APKs, built by .github/workflows/build-andkey1-apk.yml.
+
+          AndKey1-release.apk   package com.andkey1        (sideload-ready, debug keystore)
+          AndKey1-debug.apk     package com.andkey1.debug  (installs side by side)
+
+          This tag is force-updated on every build, so it always holds the newest APKs.
+          Install with:  adb install -r AndKey1-release.apk
+          EOF
+          git add -f ci-artifacts
+          git commit -q -m "ci: AndKey1 APK (run ${GITHUB_RUN_NUMBER})"
+          git push -f origin "HEAD:refs/tags/apk-latest"
+          echo "Published APKs to tag apk-latest"
+
+      # Keeps the rolling release assets fresh (uploaded from the runner).
+      - name: Upload APKs to the rolling andkey1-v1.0.0 release
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view andkey1-v1.0.0 >/dev/null 2>&1 || \
+            gh release create andkey1-v1.0.0 --title "AndKey1 1.0.0 — standalone APK" \
+              --notes "Single standalone app: the guide, model_toolkit.py and the four file functions."
+          gh release upload andkey1-v1.0.0 /tmp/apk/AndKey1-release.apk /tmp/apk/AndKey1-debug.apk --clobber
+
+      - name: Create Release with APK (main/master only)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: andkey1-${{ github.run_number }}
+          name: AndKey1 ${{ github.run_number }}
+          body: |
+            **AndKey1** — one standalone offline APK.
+
+            - `TERMUX_PYTHON_WINDOWS_GUIDE.md` + `model_toolkit.py` bundled inside
+            - ① Load · ② Inspect `.gguf`/`.litert`/`.ablitert` · ③ Generate · ④ Replace with `.bak-` rollback
+            - No permissions at all (no INTERNET), no third-party libraries, Android 8+ (~50 KB)
+          files: |
+            /tmp/apk/AndKey1-release.apk
+            /tmp/apk/AndKey1-debug.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
