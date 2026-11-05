@@ -116,6 +116,33 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      # CI artifact downloads are served from a blob host that some networks
+      # block. Mirroring the finished APKs into a single, always-overwritten git
+      # tag makes the download work anywhere `git` does:
+      #   git fetch origin refs/tags/apk-latest:refs/tags/apk-latest
+      #   git show apk-latest:ci-artifacts/guide_toolkit-debug.apk > app.apk
+      - name: Mirror APKs into the apk-latest tag
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -e
+          git config user.name "BuildGenie CI"
+          git config user.email "ci@users.noreply.github.com"
+          mkdir -p ci-artifacts
+          cp /tmp/apk/*.apk ci-artifacts/
+          cat > ci-artifacts/README.txt <<'EOF'
+          BuildGenie Toolkit APKs, built by .github/workflows/build-guide-toolkit-apk.yml.
+
+          guide_toolkit-debug.apk    debug build (applicationId com.buildgenie.toolkit.debug)
+          guide_toolkit-release.apk  release build signed with the debug keystore (sideload-ready)
+
+          This tag is force-updated on every build, so it always holds the newest APKs.
+          Install with:  adb install -r guide_toolkit-release.apk
+          EOF
+          git add -f ci-artifacts
+          git commit -q -m "ci: BuildGenie Toolkit APK (run ${GITHUB_RUN_NUMBER})"
+          git push -f origin "HEAD:refs/tags/apk-latest"
+          echo "Published APKs to tag apk-latest"
+
       - name: Attach APKs to a release (main/master only)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2

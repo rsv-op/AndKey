@@ -39,6 +39,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Installable side by side with the release build
+            applicationIdSuffix ".debug"
+        }
         release {
             minifyEnabled false
             shrinkResources false
