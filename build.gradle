@@ -1,11 +1,10 @@
-// Top-level build file for BuildGenie
-// You can add configuration common to all sub-projects here.
+// AndKey1 — single-module offline Android app.
+// Nothing else is built from this repository.
 
 plugins {
     id 'com.android.application' version '8.2.2' apply false
-    id 'com.android.library' version '8.2.2' apply false
 }
 
-task clean(type: Delete) {
-    delete rootProject.buildDir
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
 }

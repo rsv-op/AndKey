@@ -1,4 +1,4 @@
-package com.buildgenie.toolkit;
+package com.andkey1;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -34,7 +34,7 @@ import java.util.TimeZone;
  * </pre>
  *
  * <p>Standard library of the platform only (java.* plus org.json) — no network,
- * no third-party code, matching BuildGenie's zero-network policy. Exit-code
+ * no third-party code, matching AndKey1's zero-network policy. Exit-code
  * equivalents are carried by {@link ToolkitException#code}: 1 = not found,
  * 2 = parse/validation failure, 3 = usage.</p>
  */
