@@ -222,6 +222,44 @@ public final class ModelToolkit {
         }
     }
 
+    /**
+     * Atomic streamed copy: temp file in the destination directory, fsync, rename.
+     * Used for model files so multi-GB weights are never held in memory.
+     */
+    private static void atomicCopy(File src, File dest, String prefix) throws IOException {
+        File dir = dest.getAbsoluteFile().getParentFile();
+        if (dir != null && !dir.isDirectory() && !dir.mkdirs()) {
+            throw new IOException("cannot create directory: " + dir);
+        }
+        File tmp = File.createTempFile(prefix, ".tmp", dir);
+        boolean ok = false;
+        try (FileInputStream in = new FileInputStream(src);
+             FileOutputStream out = new FileOutputStream(tmp)) {
+            byte[] buf = new byte[128 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+            out.flush();
+            out.getFD().sync();
+            ok = true;
+        } finally {
+            if (!ok) {
+                //noinspection ResultOfMethodCallIgnored
+                tmp.delete();
+            }
+        }
+        if (!tmp.renameTo(dest)) {
+            //noinspection ResultOfMethodCallIgnored
+            dest.delete();
+            if (!tmp.renameTo(dest)) {
+                //noinspection ResultOfMethodCallIgnored
+                tmp.delete();
+                throw new IOException("atomic rename failed for " + dest);
+            }
+        }
+    }
+
     /** Atomic write: temp file in the same directory, fsync, rename. */
     private static void atomicWrite(File dest, byte[] data, String prefix) throws IOException {
         File dir = dest.getAbsoluteFile().getParentFile();
@@ -928,12 +966,6 @@ public final class ModelToolkit {
             }
         }
 
-        byte[] srcBytes;
-        try {
-            srcBytes = readAll(source);
-        } catch (IOException e) {
-            throw new ToolkitException("unreadable source: " + e.getMessage(), 1);
-        }
         String srcSha;
         try {
             srcSha = sha256(source);
@@ -971,7 +1003,9 @@ public final class ModelToolkit {
         }
 
         try {
-            atomicWrite(target, srcBytes, ".repl-");
+            // Streamed temp file -> fsync -> rename: a crash can never leave a
+            // half-written model, and multi-GB weights never sit in RAM.
+            atomicCopy(source, target, ".repl-");
         } catch (IOException e) {
             throw new ToolkitException("atomic overwrite failed: " + e.getMessage());
         }
@@ -1020,16 +1054,10 @@ public final class ModelToolkit {
         }
         java.util.Collections.sort(backups);
         File latest = backups.get(backups.size() - 1);
-        byte[] data;
-        try {
-            data = readAll(latest);
-        } catch (IOException e) {
-            throw new ToolkitException("unreadable backup: " + e.getMessage());
-        }
         File pre = backupName(new File(target.getAbsolutePath() + ".pre-restore"));
         try {
             copyFile(target, pre);
-            atomicWrite(target, data, ".rest-");
+            atomicCopy(latest, target, ".rest-");
         } catch (IOException e) {
             throw new ToolkitException("restore failed: " + e.getMessage());
         }

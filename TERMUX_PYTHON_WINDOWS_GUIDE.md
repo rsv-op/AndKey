@@ -464,6 +464,43 @@ python model_toolkit.py inspect ./my-model.gguf --json >> ./report.json
 
 ---
 
+## 4b. No PC and no Termux? Install the Toolkit APK
+
+Everything in this guide is also available as a single installable app,
+**BuildGenie Toolkit** (`com.buildgenie.toolkit`), built from this very file plus
+`tools/model_toolkit.py`:
+
+| Where | What to get |
+|-------|-------------|
+| Actions → **Build BuildGenie Toolkit APK (guide + tools)** → Artifacts | `BuildGenie-Toolkit-APK` (`*-debug.apk`, `*-release.apk`) |
+| Local build | `gradle :guide_toolkit:assembleDebug` → `guide_toolkit/build/outputs/apk/debug/guide_toolkit-debug.apk` |
+| Install | Tap the APK in your file manager, or `adb install -r guide_toolkit-debug.apk` / `termux-open BuildGenie-Toolkit-debug.apk` |
+
+The app has **no INTERNET permission and no third-party libraries**, and it ships:
+
+- **Guide** — this document, rendered in-app (copy or save it to the workspace)
+- **Python tool** — `tools/model_toolkit.py` verbatim, copyable to Termux
+- **Native equivalents of the four functions**, for phones without Python:
+
+| Guide section | In the Toolkit APK |
+|---------------|--------------------|
+| §1.4① / §3.2① Load | **① Load** → pick any file → `LOAD OK` + size + `sha256` + format |
+| §1.4② / §3.2② Inspect | **② Inspect** → `.gguf` (version, tensors, metadata KVs) and `.litert`/`.ablitert`/`.tflite` (FlatBuffer root offset, `TFL3`, model version, subgraph/op/buffer counts) |
+| §1.4③ / §3.2③ Generate | **③ Generate** → `report.json`, `manifest.json`, self-verified `stub.gguf` in the workspace, exportable to Downloads |
+| §1.4④ / §3.2④ Replace | **④ Replace** → import a source file, name the target, atomic swap with `.bak-<timestamp>` backup, hash verification and restore |
+
+Workspace (visible from Termux / `adb shell`):
+
+```bash
+adb shell ls -l /sdcard/Android/data/com.buildgenie.toolkit/files/workspace
+```
+
+> Files are copied into that workspace before they are inspected or replaced, so SAF
+> pickers need no storage permission. Exit-code contract is unchanged:
+> `0` success · `1` not found · `2` parse/validation failure · `3` usage.
+
+---
+
 ## 5. Troubleshooting
 
 | Symptom | Fix |

@@ -548,10 +548,12 @@ public class MainActivity extends Activity {
             case REQ_SOURCE:
                 runPicked(uri, name, workspace, replaceOut, "IMPORT source", file -> {
                     replaceSourceName = file.getName();
-                    if (targetNameField != null) {
-                        ui.post(() -> targetNameField.setText(file.getName()));
-                    }
-                    return ModelToolkit.load(file);
+                    ModelToolkit.Result base = ModelToolkit.load(file);
+                    String human = "SOURCE READY → " + file.getName() + "\n"
+                            + "Type the workspace target name above (e.g. model.gguf), then press\n"
+                            + "\"Run REPLACE (target ← source)\".\n\n"
+                            + base.human;
+                    return new ModelToolkit.Result(base.json, human);
                 });
                 break;
             default:
@@ -704,14 +706,20 @@ public class MainActivity extends Activity {
         statusAsync("Copying " + src.getName() + " to the chosen location …");
         bg.execute(() -> {
             String message;
-            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+            try (InputStream in = new java.io.FileInputStream(src);
+                 OutputStream out = getContentResolver().openOutputStream(uri)) {
                 if (out == null) {
                     throw new IOException("cannot open target");
                 }
-                byte[] data = ModelToolkit.readAll(src);
-                out.write(data);
+                byte[] buf = new byte[128 * 1024];
+                long total = 0;
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    total += n;
+                }
                 out.flush();
-                message = "Exported " + src.getName() + " (" + data.length + " bytes)";
+                message = "Exported " + src.getName() + " (" + total + " bytes)";
             } catch (Exception e) {
                 message = "Export failed: " + e.getMessage();
             }
