@@ -472,9 +472,11 @@ Everything in this guide is also available as a single installable app,
 
 | Where | What to get |
 |-------|-------------|
+| [Releases → BuildGenie Toolkit](https://github.com/rsv-op/AndKey/releases/tag/toolkit-v1.0.0) | `BuildGenie-Toolkit-release.apk` / `-debug.apk` |
+| Termux (no browser needed) | `curl -L -o ~/Toolkit.apk https://github.com/rsv-op/AndKey/raw/apk-latest/ci-artifacts/BuildGenie-Toolkit-release.apk` |
 | Actions → **Build BuildGenie Toolkit APK (guide + tools)** → Artifacts | `BuildGenie-Toolkit-APK` (`*-debug.apk`, `*-release.apk`) |
 | Local build | `gradle :guide_toolkit:assembleDebug` → `guide_toolkit/build/outputs/apk/debug/guide_toolkit-debug.apk` |
-| Install | Tap the APK in your file manager, or `adb install -r guide_toolkit-debug.apk` / `termux-open BuildGenie-Toolkit-debug.apk` |
+| Install | Tap the APK in your file manager, or `adb install -r BuildGenie-Toolkit-release.apk` / `termux-open ~/Toolkit.apk` |
 
 The app has **no INTERNET permission and no third-party libraries**, and it ships:
 

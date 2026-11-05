@@ -143,6 +143,20 @@ jobs:
           git push -f origin "HEAD:refs/tags/apk-latest"
           echo "Published APKs to tag apk-latest"
 
+      # Keeps the rolling release assets fresh. Runs on the runner, so the APK
+      # bytes are uploaded from CI (api/upload hosts that some networks block are
+      # not involved for the user, who only downloads).
+      - name: Upload APKs to the rolling toolkit-v1.0.0 release
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view toolkit-v1.0.0 >/dev/null 2>&1 || \
+            gh release create toolkit-v1.0.0 --title "BuildGenie Toolkit 1.0.0 — guide + model_toolkit APK" \
+              --notes "Built from TERMUX_PYTHON_WINDOWS_GUIDE.md + tools/model_toolkit.py."
+          gh release upload toolkit-v1.0.0 /tmp/apk/BuildGenie-Toolkit-release.apk /tmp/apk/BuildGenie-Toolkit-debug.apk --clobber
+
       - name: Attach APKs to a release (main/master only)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2

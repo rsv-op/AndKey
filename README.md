@@ -40,9 +40,20 @@ gradle :guide_toolkit:assembleDebug      # → guide_toolkit/build/outputs/apk/d
 gradle :guide_toolkit:assembleRelease    # → installable release APK (debug keystore)
 ```
 
-Or take the artifact from [**Actions → Build BuildGenie Toolkit APK (guide + tools)**](.github/workflows/build-guide-toolkit-apk.yml)
-(`BuildGenie-Toolkit-APK`), which additionally asserts that both assets and `classes.dex` are
-really inside the built zip and that no `INTERNET` permission survived.
+**Download without building:**
+
+- [**Release → BuildGenie Toolkit 1.0.0**](https://github.com/rsv-op/AndKey/releases/tag/toolkit-v1.0.0)
+- or straight from the always-current tag (works even where Actions artifacts are blocked):
+
+```bash
+curl -L -o BuildGenie-Toolkit.apk \
+  https://github.com/rsv-op/AndKey/raw/apk-latest/ci-artifacts/BuildGenie-Toolkit-release.apk
+adb install -r BuildGenie-Toolkit.apk
+```
+
+The CI job ([**Build BuildGenie Toolkit APK (guide + tools)**](.github/workflows/build-guide-toolkit-apk.yml))
+additionally asserts that both assets and `classes.dex` are really inside the built zip and that no
+`INTERNET` permission survived.
 
 ## Architecture
 
