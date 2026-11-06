@@ -20,7 +20,7 @@ public class TaskPacketBuilderTest {
     private static InspectedFile model(String path, String arch, long size) {
         HeaderParser.Header header = HeaderParser.parse(HeaderParserTest.ggufStub(arch, "m"), size);
         return new InspectedFile(path, header, size,
-                StreamInspector.sha256Hex(HeaderParserTest.ggufStub(arch, "m") + path), false, "staged");
+                StreamInspector.sha256Hex((HeaderParserTest.ggufStub(arch, "m") + path).getBytes()), false, "staged");
     }
 
     private static TaskPacketBuilder.Input baseInput() {

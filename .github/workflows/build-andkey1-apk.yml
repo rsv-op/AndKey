@@ -57,8 +57,20 @@ jobs:
 
       - name: Unit tests (pure-Java packet builder, header parser, zip walker)
         run: |
-          set -o pipefail
-          gradle :andkey1:testDebugUnitTest --stacktrace 2>&1 | tee /tmp/unit-tests.log
+          status=0
+          gradle :andkey1:testDebugUnitTest --stacktrace > /tmp/unit-tests.log 2>&1 || status=$?
+          cat /tmp/unit-tests.log
+          if [ "$status" -ne 0 ]; then
+            echo "::group::unit test / compile failures"
+            grep -E "error:|FAILED|Caused by|AssertionError|expected:|\*\*\*" /tmp/unit-tests.log | head -40 || true
+            echo "::endgroup::"
+            # GitHub caps annotations at 10 per step; surface the most useful lines there
+            # because Actions log archives are not always reachable from tooling.
+            grep -E "error:|FAILED|AssertionError" /tmp/unit-tests.log | head -8 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          fi
 
       - name: "Guard — the JVM-tested core stays Android-free"
         run: |

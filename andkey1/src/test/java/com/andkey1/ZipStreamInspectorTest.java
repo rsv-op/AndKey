@@ -54,12 +54,14 @@ public class ZipStreamInspectorTest {
     @Test
     public void capsTextPreviewButKeepsFullHash() throws Exception {
         StringBuilder big = new StringBuilder();
-        for (int i = 0; i < 5000; i++) {
+        for (int i = 0; i < 20_000; i++) {
             big.append("line ").append(i).append('\n');
         }
         byte[] payload = big.toString().getBytes(StandardCharsets.UTF_8);
         byte[] archive = zipOf(new Object[]{"big.txt", payload});
 
+        assertTrue("fixture must exceed the 64 KiB preview",
+                payload.length > StreamInspector.TEXT_PREVIEW_BYTES);
         ZipStreamInspector.Report report = ZipStreamInspector.inspect(
                 new ByteArrayInputStream(archive), "big.zip",
                 new ZipStreamInspector.Limits(), null, null);
