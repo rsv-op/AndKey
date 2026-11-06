@@ -55,6 +55,31 @@ jobs:
           echo "python: $(wc -c < andkey1/src/main/assets/model_toolkit.py) bytes"
           echo "modules in settings.gradle:"; grep include settings.gradle
 
+      - name: Unit tests (pure-Java packet builder, header parser, zip walker)
+        run: |
+          set -o pipefail
+          gradle :andkey1:testDebugUnitTest --stacktrace 2>&1 | tee /tmp/unit-tests.log
+
+      - name: "Guard — the JVM-tested core stays Android-free"
+        run: |
+          for f in HeaderParser StreamInspector ZipStreamInspector TaskPacketBuilder InspectedFile InspectedText; do
+            if grep -q '^import android' "andkey1/src/main/java/com/andkey1/$f.java"; then
+              echo "::error::$f.java must stay Android-free so it can be unit-tested on the JVM"
+              exit 1
+            fi
+          done
+          echo "VERIFIED: pure-Java core has no Android imports"
+
+      - name: Upload unit test report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: AndKey1-unit-test-report
+          path: andkey1/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Assemble Debug + Release APK
         run: |
           set -o pipefail
