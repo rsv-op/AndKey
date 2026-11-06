@@ -10,6 +10,7 @@
 > | 2 | **Inspect** `.gguf` / `.litert` / `.ablitert` | tab **② Inspect** — headers parsed by content, never executed | `model_toolkit.py inspect PATH` |
 > | 3 | **Generate** | tab **③ Generate** — `report.json`, `manifest.json`, `stub.gguf` | `model_toolkit.py generate …` |
 > | 4 | **Replace** | tab **④ Replace** — atomic swap, `.bak-<timestamp>`, verify, restore | `model_toolkit.py replace …` |
+> | 5 | **Packet** | tab **⑤ Packet** — multi-file / `.zip` ingest → one `TASK_PACKET.md` | *(app-only: needs SAF multi-select)* |
 >
 > Everything below is copy-paste. Each step has a **Verify** line. The app asks for **zero
 > permissions** — no storage, no network — because all file access goes through Android's system
@@ -175,6 +176,44 @@ document.
 
 ---
 
+## 2b. ⑤ Packet — one file an LLM can build from
+
+AndKey1 does not run inference. Instead it packages everything a model needs to *plan*: one
+deterministic Markdown file, `TASK_PACKET.md`.
+
+**Steps**
+
+1. Open **⑤ Packet**, type the **Task / Theory** (what should be built — it goes into the packet
+   verbatim).
+2. **Pick files / .zip (multi-select)** — any mix of `.gguf`, `.litert`, `.ablitert`, `.tflite`,
+   `.md`, source code and `.zip` archives. A running log shows each archive entry as it is read.
+3. **Build TASK_PACKET.md in workspace** → `/sdcard/Android/data/com.andkey1/files/workspace/TASK_PACKET.md`.
+4. **Save TASK_PACKET.md…** (system picker, any folder) or **Save to Downloads** (Android 10+,
+   still no storage permission). Hand the file to your LLM or the Windows 11 builder.
+
+**What is in the packet**
+
+| Section | Content |
+|---------|---------|
+| front matter | `packet_version`, `generated_at`, app + device, target, counts |
+| §1 | the Task / Theory, verbatim |
+| §2 | inventory table: path, format, size, `sha256`, header summary — then per-file GGUF (version, tensors, metadata sample) or LiteRT (identifier, model version, subgraphs, op codes, buffers) details |
+| §3 | file tree plus fenced, language-tagged contents (64 KiB preview per file) |
+| §4 | the feasibility prompt: answer with a `DECISION:` line (BUILDABLE / UNBUILDABLE), then `AI_BUILD_SPEC.md` or `MISSING:` lines |
+| Appendix A | anything skipped (zip-slip guard, encrypted archive, entry/size limits) |
+
+**How it stays safe and small**
+
+- Every input is read **once**: size, `sha256` and headers come from the same streaming pass —
+  a 4 GiB model costs 4 MiB of preview, never a heap-resident copy.
+- Files are copied into the workspace only when ≤ 64 MiB (or you tick *keep large copies*); the
+  packet always records whether a copy exists.
+- Archives are walked in memory, never extracted: entry-count, per-entry size, total-size and
+  compression-ratio caps stop zip bombs, and `..`/absolute paths are refused.
+- Packet budgets: 200 embedded files, 2 000 000 characters, 64 KiB per file — every cut is marked
+  `<!-- truncated: N of M bytes shown -->` so nothing is silently dropped.
+- No network. The packet leaves the device only when **you** move it.
+
 ## 3. The same four functions from Termux / Windows (optional)
 
 The toolkit is stdlib-only, Python 3.8+, zero network calls.
@@ -257,6 +296,9 @@ The in-app ④ Replace tab does exactly this without a PC, including the `.bak-`
 | `FAILED (exit code 1)` | File not found — re-pick it; the workspace path is shown in the status bar |
 | `FAILED (exit code 2)` | Parse/validation failure — truncated or corrupt file, or a format-mismatch guard on Replace (tick **force** only if intentional) |
 | `no backups found` on Restore | The target has no `.bak-*` yet; run a Replace first |
+| Packet tab: *Pick* returns nothing | The picker needs a long-press to multi-select on some OEMs; or pick a folder-less single file and repeat |
+| Packet shows a file as `not copied` | It is larger than 64 MiB — hashed and parsed in place; tick *keep large copies* to duplicate it |
+| `MISSING:` in the LLM answer | The model says a resource is absent — stage that file/zip and rebuild the packet |
 | Files invisible in a file manager | Use **③ Generate → Export last generated file to Downloads…**, or `adb shell ls /sdcard/Android/data/com.andkey1/files/workspace` |
 | GGUF inspect shows `parse_error` | File truncated mid-download — compare `sha256` from ① Load with the source |
 
