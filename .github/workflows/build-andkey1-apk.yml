@@ -55,6 +55,43 @@ jobs:
           echo "python: $(wc -c < andkey1/src/main/assets/model_toolkit.py) bytes"
           echo "modules in settings.gradle:"; grep include settings.gradle
 
+      - name: Unit tests (pure-Java packet builder, header parser, zip walker)
+        run: |
+          status=0
+          gradle :andkey1:testDebugUnitTest --stacktrace > /tmp/unit-tests.log 2>&1 || status=$?
+          cat /tmp/unit-tests.log
+          if [ "$status" -ne 0 ]; then
+            echo "::group::unit test / compile failures"
+            grep -E "error:|FAILED|Caused by|AssertionError|expected:|\*\*\*" /tmp/unit-tests.log | head -40 || true
+            echo "::endgroup::"
+            # GitHub caps annotations at 10 per step; surface the most useful lines there
+            # because Actions log archives are not always reachable from tooling.
+            grep -E "error:|FAILED|AssertionError" /tmp/unit-tests.log | head -8 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          fi
+
+      - name: "Guard — the JVM-tested core stays Android-free"
+        run: |
+          for f in HeaderParser StreamInspector ZipStreamInspector TaskPacketBuilder InspectedFile InspectedText; do
+            if grep -q '^import android' "andkey1/src/main/java/com/andkey1/$f.java"; then
+              echo "::error::$f.java must stay Android-free so it can be unit-tested on the JVM"
+              exit 1
+            fi
+          done
+          echo "VERIFIED: pure-Java core has no Android imports"
+
+      - name: Upload unit test report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: AndKey1-unit-test-report
+          path: andkey1/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Assemble Debug + Release APK
         run: |
           set -o pipefail

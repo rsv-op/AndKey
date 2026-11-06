@@ -3,10 +3,12 @@ package com.andkey1;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -23,6 +25,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.database.Cursor;
 
@@ -55,6 +58,10 @@ import java.util.concurrent.Executors;
  *   <li>Generate — report.json, manifest.json, a valid 149-byte stub.gguf</li>
  *   <li>Replace — atomic swap with .bak-&lt;timestamp&gt; backup, hash verify, restore</li>
  * </ol>
+ *
+ * <p>On top of that, ⑤ Packet ingests a multi-selection of files and .zip archives,
+ * hashes and header-parses every entry once, and exports a single deterministic
+ * {@code TASK_PACKET.md} for an LLM / the Windows 11 builder to plan from.</p>
  */
 public class MainActivity extends Activity {
 
@@ -63,6 +70,10 @@ public class MainActivity extends Activity {
     private static final int REQ_REPORT = 103;
     private static final int REQ_SOURCE = 104;
     private static final int REQ_EXPORT = 105;
+    private static final int REQ_PICK_PACKET = 106;
+    private static final int REQ_EXPORT_PACKET = 107;
+
+    private static final String STATE_TASK = "packet_task_text";
 
     private static final String GUIDE_ASSET = "TERMUX_PYTHON_WINDOWS_GUIDE.md";
     private static final String PYTHON_ASSET = "model_toolkit.py";
@@ -92,8 +103,22 @@ public class MainActivity extends Activity {
     private volatile String replaceSourceName;
     private volatile File lastGenerated;
 
+    // ⑤ Ingest → TASK_PACKET.md
+    private EditText packetTaskField;
+    private CheckBox packetKeepLarge;
+    private TextView packetOut;
+    private TextView packetList;
+    private volatile WorkspaceIngestor.Result lastIngest;
+    private volatile String lastPacket;
+    private volatile boolean ingestCancelled;
+    private String restoredTask = "";
+
     private interface Op {
         ModelToolkit.Result run() throws Exception;
+    }
+
+    private interface TextOp {
+        String run() throws Exception;
     }
 
     @Override
@@ -110,6 +135,9 @@ public class MainActivity extends Activity {
         workspace.mkdirs();
         //noinspection ResultOfMethodCallIgnored
         scratch.mkdirs();
+
+        restoredTask = savedInstanceState == null
+                ? "" : savedInstanceState.getString(STATE_TASK, "");
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -149,6 +177,7 @@ public class MainActivity extends Activity {
         addNav(nav, "inspect", "② Inspect");
         addNav(nav, "generate", "③ Generate");
         addNav(nav, "replace", "④ Replace");
+        addNav(nav, "packet", "⑤ Packet");
         addNav(nav, "python", "Python tool");
         addNav(nav, "about", "About");
 
@@ -173,6 +202,7 @@ public class MainActivity extends Activity {
         pages.put("inspect", buildInspectPage());
         pages.put("generate", buildGeneratePage());
         pages.put("replace", buildReplacePage());
+        pages.put("packet", buildPacketPage());
         pages.put("python", buildPythonPage());
         pages.put("about", buildAboutPage());
 
@@ -473,7 +503,8 @@ public class MainActivity extends Activity {
                 "AndKey1 " + ModelToolkit.TOOL_VERSION + " packages:\n"
                         + "• TERMUX_PYTHON_WINDOWS_GUIDE.md — the operating guide, rendered in-app\n"
                         + "• model_toolkit.py — the Python toolkit, verbatim (copy it out to Termux)\n"
-                        + "• A native port of the four functions: Load · Inspect · Generate · Replace\n\n"
+                        + "• A native port of the four functions: Load · Inspect · Generate · Replace\n"
+                        + "• ⑤ Packet — multi-file/.zip ingest → one deterministic\n  TASK_PACKET.md for an LLM or the Windows 11 builder\n\n"
                         + "Both files live inside this app's own assets (andkey1/src/main/assets/), so "
                         + "the app can never drift from its documentation — nothing else is in this project.\n\n"
                         + "Zero network: the INTERNET and ACCESS_NETWORK_STATE permissions are "
@@ -516,6 +547,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        // Multi-select delivers a ClipData and no single data URI, so it must be
+        // handled before the single-URI guard below.
+        if (requestCode == REQ_PICK_PACKET) {
+            handlePacketPick(resultCode, data);
+            return;
+        }
+
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             if (requestCode != REQ_EXPORT) {
                 status("Cancelled — nothing picked.");
@@ -525,6 +564,10 @@ public class MainActivity extends Activity {
         Uri uri = data.getData();
         if (requestCode == REQ_EXPORT) {
             writeUri(uri);
+            return;
+        }
+        if (requestCode == REQ_EXPORT_PACKET) {
+            writePacketUri(uri);
             return;
         }
         final String name = safeName(queryDisplayName(uri));
@@ -656,6 +699,34 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void runTextTask(final String label, final TextView out, final TextOp task) {
+        statusAsync("Working · " + label);
+        if (out != null) {
+            out.setText("Working…\n" + label);
+        }
+        bg.execute(() -> {
+            String text;
+            try {
+                text = task.run();
+            } catch (StreamInspector.CancelledException e) {
+                text = "CANCELLED\n" + label + " stopped by user.";
+            } catch (ModelToolkit.ToolkitException e) {
+                text = "FAILED (exit code " + e.code + ")\n" + e.getMessage();
+            } catch (Throwable t) {
+                text = "ERROR\n" + t.getClass().getSimpleName()
+                        + (t.getMessage() == null ? "" : ": " + t.getMessage());
+            }
+            final String finalText = text;
+            ui.post(() -> {
+                if (out != null) {
+                    out.setText(finalText);
+                }
+                status("Ready · " + label + " finished");
+                refreshLists();
+            });
+        });
+    }
+
     // ======================================================================
     // Generate actions
     // ======================================================================
@@ -766,6 +837,314 @@ public class MainActivity extends Activity {
                 () -> ModelToolkit.restore(target));
     }
 
+
+    // ======================================================================
+    // ⑤ Ingest → TASK_PACKET.md
+    // ======================================================================
+
+    private View buildPacketPage() {
+        LinearLayout col = column();
+        col.addView(heading("⑤ Ingest → TASK_PACKET.md"));
+        col.addView(body("Stage a multi-selection of files and .zip archives, then export one "
+                + "deterministic Markdown packet that an LLM (or the Windows 11 builder) reads to "
+                + "decide feasibility and write AI_BUILD_SPEC.md.\n\n"
+                + "Every input is read exactly once: size, SHA-256 and model headers come from a "
+                + "single streaming pass, so multi-GB .gguf files are never loaded into memory. "
+                + "Headers are parsed, never executed. Nothing leaves the device."));
+
+        packetTaskField = new EditText(this);
+        packetTaskField.setText(restoredTask);
+        packetTaskField.setHint("Task / Theory — what should the LLM or the Windows builder produce?");
+        packetTaskField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        packetTaskField.setMinLines(4);
+        packetTaskField.setGravity(Gravity.TOP | Gravity.START);
+        packetTaskField.setTextSize(13f);
+        col.addView(packetTaskField, wide());
+        col.addView(spacer(6));
+
+        packetKeepLarge = new CheckBox(this);
+        packetKeepLarge.setText("Keep copies of files larger than 64 MiB in the workspace");
+        packetKeepLarge.setTextSize(13f);
+        col.addView(packetKeepLarge);
+
+        LinearLayout pickRow = new LinearLayout(this);
+        pickRow.setOrientation(LinearLayout.HORIZONTAL);
+        pickRow.addView(action("Pick files / .zip (multi-select)", v -> pickPacketFiles()),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        pickRow.addView(action("Cancel", v -> {
+            ingestCancelled = true;
+            status("Cancelling…");
+        }), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        col.addView(pickRow, wide());
+        col.addView(spacer(4));
+        col.addView(action("Build TASK_PACKET.md in workspace", v -> buildPacket()), wide());
+
+        LinearLayout saveRow = new LinearLayout(this);
+        saveRow.setOrientation(LinearLayout.HORIZONTAL);
+        saveRow.addView(action("Save TASK_PACKET.md…", v -> exportPacket()),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        saveRow.addView(action("Save to Downloads (Android 10+)", v -> savePacketToDownloads()),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        col.addView(saveRow, wide());
+
+        packetOut = console("⑤ PACKET — nothing ingested yet.");
+        packetList = console("(staged inventory)");
+        col.addView(spacer(8));
+        col.addView(packetOut, wide());
+        col.addView(spacer(10));
+        col.addView(heading("Staged inventory"));
+        col.addView(packetList, wide());
+        return scrollPage(col);
+    }
+
+    private void pickPacketFiles() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            startActivityForResult(intent, REQ_PICK_PACKET);
+        } catch (Exception e) {
+            status("No document picker available: " + e.getMessage());
+        }
+    }
+
+    private void handlePacketPick(int resultCode, Intent data) {
+        List<Uri> uris = new ArrayList<>();
+        if (data != null) {
+            ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri picked = clip.getItemAt(i).getUri();
+                    if (picked != null) {
+                        uris.add(picked);
+                    }
+                }
+            } else if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+        }
+        if (resultCode != RESULT_OK || uris.isEmpty()) {
+            status("Cancelled — nothing picked.");
+            return;
+        }
+        startIngest(uris);
+    }
+
+    private void startIngest(final List<Uri> uris) {
+        final boolean keepLarge = packetKeepLarge != null && packetKeepLarge.isChecked();
+        ingestCancelled = false;
+        final WorkspaceIngestor.Progress progress = message -> ui.post(() -> status(message));
+        runTextTask("INGEST " + uris.size() + " selection(s)", packetOut, () -> {
+            WorkspaceIngestor.Result result = WorkspaceIngestor.ingest(
+                    this, uris, workspace, keepLarge, progress, () -> ingestCancelled);
+            lastIngest = result;
+            final String listing = inventoryListing(result);
+            ui.post(() -> {
+                if (packetList != null) {
+                    packetList.setText(listing);
+                }
+            });
+            StringBuilder sb = new StringBuilder();
+            sb.append("INGEST OK\n");
+            sb.append("  selections : ").append(uris.size()).append('\n');
+            sb.append("  archives   : ").append(result.archives).append('\n');
+            sb.append("  files      : ").append(result.files.size()).append('\n');
+            sb.append("  text files : ").append(result.texts.size()).append('\n');
+            sb.append("  copied     : ").append(result.copied.size()).append('\n');
+            sb.append("  skipped    : ").append(result.skipped.size()).append('\n');
+            for (String skip : result.skipped) {
+                sb.append("    - ").append(skip).append('\n');
+            }
+            sb.append("\nNext: type the Task / Theory above, then \"Build TASK_PACKET.md in workspace\".");
+            return sb.toString();
+        });
+    }
+
+    private String inventoryListing(WorkspaceIngestor.Result result) {
+        if (result == null || (result.files.isEmpty() && result.texts.isEmpty())) {
+            return "(nothing staged yet)";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("MODELS / BINARIES (").append(result.files.size()).append(")\n");
+        for (InspectedFile f : result.files) {
+            sb.append(String.format(Locale.US, "  %-28s %-7s %9s  %s%s%n",
+                    shorten(f.path, 28), f.format(), ModelToolkit.fmtSize(f.sizeBytes),
+                    shortHash(f.sha256), f.copiedToWorkspace ? "  [copied]" : ""));
+        }
+        sb.append("\nTEXT FILES (").append(result.texts.size()).append(")\n");
+        for (InspectedText t : result.texts) {
+            sb.append(String.format(Locale.US, "  %-28s %9s  %s%s%n",
+                    shorten(t.path, 28), ModelToolkit.fmtSize(t.sizeBytes),
+                    shortHash(t.sha256), t.truncated ? "  [preview capped]" : ""));
+        }
+        return sb.toString();
+    }
+
+    private static String shorten(String value, int max) {
+        return value.length() <= max ? value : "…" + value.substring(value.length() - (max - 1));
+    }
+
+    private static String shortHash(String sha) {
+        return sha == null || sha.isEmpty() ? "n/a" : sha.substring(0, 12);
+    }
+
+    private void buildPacket() {
+        final WorkspaceIngestor.Result ingest = lastIngest;
+        final String task = packetTaskField == null ? "" : packetTaskField.getText().toString().trim();
+        if (ingest == null) {
+            toast("Pick files or a .zip first.");
+            return;
+        }
+        if (task.isEmpty()) {
+            toast("Type the Task / Theory first.");
+            return;
+        }
+        final File out = new File(workspace, "TASK_PACKET.md");
+        runTextTask("BUILD TASK_PACKET.md", packetOut, () -> {
+            TaskPacketBuilder.Input input = new TaskPacketBuilder.Input();
+            input.userTask = task;
+            input.appVersion = ModelToolkit.TOOL_VERSION;
+            input.deviceInfo = Build.MANUFACTURER + " " + Build.MODEL
+                    + " · Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")";
+            input.target = "Windows 11 x64 builder";
+            input.generatedAtEpochMs = System.currentTimeMillis();
+            input.files.addAll(ingest.files);
+            input.texts.addAll(ingest.texts);
+            input.skipped.addAll(ingest.skipped);
+
+            String packet = TaskPacketBuilder.build(input);
+            writeTextAtomic(out, packet);
+            lastPacket = packet;
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("PACKET OK\n");
+            sb.append("  path    : ").append(out.getAbsolutePath()).append('\n');
+            sb.append("  size    : ").append(packet.length()).append(" chars (")
+                    .append(ModelToolkit.fmtSize(out.length())).append(")\n");
+            sb.append("  sha256  : ").append(ModelToolkit.sha256(out)).append('\n');
+            sb.append("  §1 task · §2 ").append(ingest.files.size()).append(" file(s) · §3 ")
+                    .append(ingest.texts.size()).append(" text file(s) · §4 feasibility prompt\n\n");
+            sb.append("Hand TASK_PACKET.md to your LLM (or the Windows 11 builder).");
+            return sb.toString();
+        });
+    }
+
+    private void exportPacket() {
+        if (lastPacket == null) {
+            toast("Build TASK_PACKET.md first.");
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/markdown");
+        intent.putExtra(Intent.EXTRA_TITLE, "TASK_PACKET.md");
+        try {
+            startActivityForResult(intent, REQ_EXPORT_PACKET);
+        } catch (Exception e) {
+            toast("No save target available: " + e.getMessage());
+        }
+    }
+
+    private void writePacketUri(final Uri uri) {
+        final String packet = lastPacket;
+        if (packet == null) {
+            return;
+        }
+        statusAsync("Writing TASK_PACKET.md …");
+        bg.execute(() -> {
+            String message;
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out == null) {
+                    throw new IOException("cannot open target");
+                }
+                byte[] data = packet.getBytes("UTF-8");
+                out.write(data);
+                out.flush();
+                message = "Saved TASK_PACKET.md (" + data.length + " bytes)";
+            } catch (Exception e) {
+                message = "Save failed: " + e.getMessage();
+            }
+            final String finalMessage = message;
+            ui.post(() -> status(finalMessage));
+        });
+    }
+
+    /**
+     * API 29+ can drop the packet straight into Downloads through MediaStore —
+     * still with zero storage permissions. Below API 29 the SAF save button is
+     * the only permission-free route, so this button explains itself.
+     */
+    private void savePacketToDownloads() {
+        final String packet = lastPacket;
+        if (packet == null) {
+            toast("Build TASK_PACKET.md first.");
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            toast("Android 10+ only — use \"Save TASK_PACKET.md…\" on this device.");
+            return;
+        }
+        statusAsync("Writing TASK_PACKET.md to Downloads …");
+        bg.execute(() -> {
+            String message;
+            try {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.DISPLAY_NAME,
+                        "TASK_PACKET-" + System.currentTimeMillis() + ".md");
+                values.put(MediaStore.MediaColumns.MIME_TYPE, "text/markdown");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH,
+                        android.os.Environment.DIRECTORY_DOWNLOADS);
+                Uri item = getContentResolver()
+                        .insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (item == null) {
+                    throw new IOException("MediaStore insert returned null");
+                }
+                try (OutputStream out = getContentResolver().openOutputStream(item)) {
+                    if (out == null) {
+                        throw new IOException("cannot open " + item);
+                    }
+                    out.write(packet.getBytes("UTF-8"));
+                    out.flush();
+                }
+                message = "Saved to Downloads: " + item;
+            } catch (Exception e) {
+                message = "Downloads save failed: " + e.getMessage();
+            }
+            final String finalMessage = message;
+            ui.post(() -> status(finalMessage));
+        });
+    }
+
+    private void writeTextAtomic(File dest, String content) throws IOException {
+        File dir = dest.getAbsoluteFile().getParentFile();
+        if (dir != null && !dir.isDirectory() && !dir.mkdirs()) {
+            throw new IOException("cannot create " + dir);
+        }
+        File tmp = File.createTempFile(".packet-", ".tmp", dir);
+        boolean ok = false;
+        try (FileOutputStream out = new FileOutputStream(tmp)) {
+            out.write(content.getBytes("UTF-8"));
+            out.flush();
+            out.getFD().sync();
+            ok = true;
+        } finally {
+            if (!ok) {
+                //noinspection ResultOfMethodCallIgnored
+                tmp.delete();
+            }
+        }
+        if (!tmp.renameTo(dest)) {
+            //noinspection ResultOfMethodCallIgnored
+            dest.delete();
+            if (!tmp.renameTo(dest)) {
+                //noinspection ResultOfMethodCallIgnored
+                tmp.delete();
+                throw new IOException("atomic rename failed for " + dest);
+            }
+        }
+    }
+
     // ======================================================================
     // Workspace helpers
     // ======================================================================
@@ -847,6 +1226,14 @@ public class MainActivity extends Activity {
             return out.toString("UTF-8");
         } catch (IOException e) {
             return "(cannot read asset " + name + ": " + e.getMessage() + ")";
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (packetTaskField != null) {
+            outState.putString(STATE_TASK, packetTaskField.getText().toString());
         }
     }
 
