@@ -8,7 +8,7 @@ in-app, so the app can never drift from its own documentation.
 
 ## Download
 
-- **Release APK** (`com.andkey1`, sideload-ready, ~50 KB):
+- **Release APK** (`com.andkey1`, sideload-ready, ~70 KB):
   [Releases → AndKey1](https://github.com/rsv-op/AndKey/releases) ·
   direct: `https://github.com/rsv-op/AndKey/releases/latest/download/AndKey1-release.apk`
 - Always-current mirror (works where Actions artifacts are blocked):
@@ -31,7 +31,7 @@ adb install -r AndKey1.apk
 | **⑤ Packet** | multi-file / `.zip` ingest → one deterministic `TASK_PACKET.md` for an LLM or the Windows 11 builder |
 | **Python tool** | `model_toolkit.py` verbatim — copy it out to Termux for the CLI |
 
-`minSdk 26` (Android 8+) · `targetSdk 34` · framework-only Java 17 · ~50 KB.
+`minSdk 26` (Android 8+) · `targetSdk 34` · framework-only Java 17 · 69 935 B release APK (83 133 B debug) as built by CI for the ⑤ Packet release.
 
 ### ⑤ Packet — `TASK_PACKET.md`
 
